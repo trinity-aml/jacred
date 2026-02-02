@@ -1,4 +1,4 @@
-﻿using JacRed.Engine.CORE;
+using JacRed.Engine.CORE;
 using JacRed.Models.Details;
 using Newtonsoft.Json.Linq;
 using System;
@@ -11,7 +11,15 @@ namespace JacRed.Engine
 {
     public static class SyncCron
     {
+        const string TimeFormat = "yyyy-MM-dd HH:mm:ss";
         static long lastsync = -1, starsync = -1;
+
+        static string FormatFileTime(long fileTime)
+        {
+            if (fileTime < 0) return "-";
+            try { return DateTime.FromFileTimeUtc(fileTime).ToLocalTime().ToString(TimeFormat); }
+            catch { return fileTime.ToString(); }
+        }
 
         #region Torrents
         async public static Task Torrents()
@@ -24,7 +32,7 @@ namespace JacRed.Engine
                 {
                     if (!string.IsNullOrWhiteSpace(AppInit.conf.syncapi))
                     {
-                        Console.WriteLine($"\n\nsync: start / {DateTime.Now}");
+                        Console.WriteLine($"\n\nsync: start / {DateTime.Now.ToString(TimeFormat)}");
 
                         if (lastsync == -1 && File.Exists("lastsync.txt"))
                             lastsync = long.Parse(File.ReadAllText("lastsync.txt"));
@@ -41,7 +49,7 @@ namespace JacRed.Engine
 
                             next: var root = await HttpClient.Get<Models.Sync.v2.RootObject>($"{AppInit.conf.syncapi}/sync/fdb/torrents?time={lastsync}&start={starsync}", timeoutSeconds: 300, MaxResponseContentBufferSize: 100_000_000);
 
-                            Console.WriteLine($"sync: time={lastsync}&start={starsync}");
+                            Console.WriteLine($"sync: time={lastsync} ({FormatFileTime(lastsync)}) & start={starsync} ({FormatFileTime(starsync)})");
 
                             if (root?.collections == null)
                             {
@@ -116,7 +124,7 @@ namespace JacRed.Engine
                         FileDB.SaveChangesToFile();
                         File.WriteAllText("lastsync.txt", lastsync.ToString());
 
-                        Console.WriteLine("sync: end");
+                        Console.WriteLine($"sync: end / {DateTime.Now.ToString(TimeFormat)}");
                     }
                     else
                     {
@@ -136,7 +144,7 @@ namespace JacRed.Engine
                     }
                     catch { }
 
-                    Console.WriteLine("sync: error / " + ex.Message);
+                    Console.WriteLine($"sync: error / {DateTime.Now.ToString(TimeFormat)} / {ex.Message}");
                 }
 
                 await Task.Delay(1000 * Random.Shared.Next(60, 300));
@@ -162,11 +170,11 @@ namespace JacRed.Engine
                         var conf = await HttpClient.Get<JObject>($"{AppInit.conf.syncapi}/sync/conf");
                         if (conf != null && conf.ContainsKey("spidr") && conf.Value<bool>("spidr"))
                         {
-                            Console.WriteLine($"\n\nsync_spidr: start / {DateTime.Now}");
+                            Console.WriteLine($"\n\nsync_spidr: start / {DateTime.Now.ToString(TimeFormat)}");
 
                             next: var root = await HttpClient.Get<Models.Sync.v2.RootObject>($"{AppInit.conf.syncapi}/sync/fdb/torrents?time={lastsync_spidr}&spidr=true", timeoutSeconds: 300, MaxResponseContentBufferSize: 100_000_000);
 
-                            Console.WriteLine($"sync_spidr: time={lastsync_spidr}");
+                            Console.WriteLine($"sync_spidr: time={lastsync_spidr} ({FormatFileTime(lastsync_spidr)})");
 
                             if (root?.collections != null && root.collections.Count > 0)
                             {
@@ -179,7 +187,7 @@ namespace JacRed.Engine
                                     goto next;
                             }
 
-                            Console.WriteLine("sync_spidr: end");
+                            Console.WriteLine($"sync_spidr: end / {DateTime.Now.ToString(TimeFormat)}");
                         }
                     }
                     else
@@ -188,7 +196,7 @@ namespace JacRed.Engine
                         continue;
                     }
                 }
-                catch (Exception ex) { Console.WriteLine("sync_spidr: error / " + ex.Message); }
+                catch (Exception ex) { Console.WriteLine($"sync_spidr: error / {DateTime.Now.ToString(TimeFormat)} / {ex.Message}"); }
             }
         }
         #endregion
