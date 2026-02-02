@@ -31,7 +31,7 @@ build_for() {
   local out_dir="$2"
   local name="$3"
   echo "==> Building for $name (RID: $rid) -> $out_dir"
-  dotnet publish . \
+  dotnet publish JacRed.csproj \
     --runtime "$rid" \
     --output "$out_dir" \
     "${PUBLISH_OPTS[@]}" \

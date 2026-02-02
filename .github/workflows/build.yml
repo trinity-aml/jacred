@@ -1,0 +1,93 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Restore
+        run: dotnet restore --verbosity minimal
+
+      - name: Publish linux-arm64
+        run: |
+          dotnet publish JacRed.csproj \
+            --configuration Release \
+            --runtime linux-arm64 \
+            --output ${{ runner.temp }}/linux-arm64 \
+            --self-contained true \
+            -p:PublishTrimmed=false \
+            -p:PublishSingleFile=true \
+            -p:DebugType=None \
+            -p:EnableCompressionInSingleFile=true \
+            -p:OptimizationPreference=Speed \
+            -p:SuppressTrimAnalysisWarnings=true \
+            -p:IlcOptimizationPreference=Speed \
+            -p:IlcFoldIdenticalMethodBodies=true \
+            --verbosity minimal
+
+      - name: Publish linux-amd64
+        run: |
+          dotnet publish JacRed.csproj \
+            --configuration Release \
+            --runtime linux-x64 \
+            --output ${{ runner.temp }}/linux-amd64 \
+            --self-contained true \
+            -p:PublishTrimmed=false \
+            -p:PublishSingleFile=true \
+            -p:DebugType=None \
+            -p:EnableCompressionInSingleFile=true \
+            -p:OptimizationPreference=Speed \
+            -p:SuppressTrimAnalysisWarnings=true \
+            -p:IlcOptimizationPreference=Speed \
+            -p:IlcFoldIdenticalMethodBodies=true \
+            --verbosity minimal
+
+      - name: Publish windows-x64
+        run: |
+          dotnet publish JacRed.csproj \
+            --configuration Release \
+            --runtime win-x64 \
+            --output ${{ runner.temp }}/windows-x64 \
+            --self-contained true \
+            -p:PublishTrimmed=false \
+            -p:PublishSingleFile=true \
+            -p:DebugType=None \
+            -p:EnableCompressionInSingleFile=true \
+            -p:OptimizationPreference=Speed \
+            -p:SuppressTrimAnalysisWarnings=true \
+            -p:IlcOptimizationPreference=Speed \
+            -p:IlcFoldIdenticalMethodBodies=true \
+            --verbosity minimal
+
+      - name: Upload artifact linux-arm64
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacred-linux-arm64
+          path: ${{ runner.temp }}/linux-arm64
+
+      - name: Upload artifact linux-amd64
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacred-linux-amd64
+          path: ${{ runner.temp }}/linux-amd64
+
+      - name: Upload artifact windows-x64
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacred-windows-x64
+          path: ${{ runner.temp }}/windows-x64
