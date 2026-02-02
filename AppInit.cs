@@ -1,4 +1,4 @@
-﻿using JacRed.Models;
+using JacRed.Models;
 using JacRed.Models.AppConf;
 using Newtonsoft.Json;
 using System;
@@ -108,6 +108,7 @@ namespace JacRed
 
         public int timeSync = 60; // минут
 
+        public int timeSyncSpidr = 60; // минут (30, 60, 120 — без случайного смещения)
 
         public TrackerSettings Rutor = new TrackerSettings("http://rutor.info");
 

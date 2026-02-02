@@ -158,8 +158,8 @@ namespace JacRed.Engine
         {
             while (true)
             {
-                await Task.Delay(1000 * Random.Shared.Next(60, 300));
-                await Task.Delay(1000 * 60 * 120);
+                int spidrMinutes = 20 > AppInit.conf.timeSyncSpidr ? 20 : AppInit.conf.timeSyncSpidr;
+                await Task.Delay(1000 * 60 * spidrMinutes);
 
                 try
                 {
