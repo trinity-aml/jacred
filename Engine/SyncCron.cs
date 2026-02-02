@@ -12,6 +12,9 @@ namespace JacRed.Engine
     public static class SyncCron
     {
         const string TimeFormat = "yyyy-MM-dd HH:mm:ss";
+        const string SyncTempDir = "Data/temp";
+        static readonly string LastSyncPath = Path.Combine(SyncTempDir, "lastsync.txt");
+        static readonly string StarSyncPath = Path.Combine(SyncTempDir, "starsync.txt");
         static long lastsync = -1, starsync = -1;
 
         static string FormatFileTime(long fileTime)
@@ -34,15 +37,15 @@ namespace JacRed.Engine
                     {
                         Console.WriteLine($"\n\nsync: start / {DateTime.Now.ToString(TimeFormat)}");
 
-                        if (lastsync == -1 && File.Exists("lastsync.txt"))
-                            lastsync = long.Parse(File.ReadAllText("lastsync.txt"));
+                        if (lastsync == -1 && File.Exists(LastSyncPath))
+                            lastsync = long.Parse(File.ReadAllText(LastSyncPath));
 
                         var conf = await HttpClient.Get<JObject>($"{AppInit.conf.syncapi}/sync/conf");
                         if (conf != null && conf.ContainsKey("fbd") && conf.Value<bool>("fbd"))
                         {
                             #region Sync.v2
-                            if (starsync == -1 && File.Exists("starsync.txt"))
-                                starsync = long.Parse(File.ReadAllText("starsync.txt"));
+                            if (starsync == -1 && File.Exists(StarSyncPath))
+                                starsync = long.Parse(File.ReadAllText(StarSyncPath));
 
                             bool reset = true;
                             DateTime lastSave = DateTime.Now;
@@ -91,19 +94,19 @@ namespace JacRed.Engine
                                     {
                                         lastSave = DateTime.Now;
                                         FileDB.SaveChangesToFile();
-                                        File.WriteAllText("lastsync.txt", lastsync.ToString());
+                                        File.WriteAllText(LastSyncPath, lastsync.ToString());
                                     }
 
                                     goto next;
                                 }
 
                                 starsync = lastsync;
-                                File.WriteAllText("starsync.txt", starsync.ToString());
+                                File.WriteAllText(StarSyncPath, starsync.ToString());
                             }
                             else if (root.collections.Count == 0)
                             {
                                 starsync = lastsync;
-                                File.WriteAllText("starsync.txt", starsync.ToString());
+                                File.WriteAllText(StarSyncPath, starsync.ToString());
                             }
                             #endregion
                         }
@@ -124,7 +127,7 @@ namespace JacRed.Engine
                         }
 
                         FileDB.SaveChangesToFile();
-                        File.WriteAllText("lastsync.txt", lastsync.ToString());
+                        File.WriteAllText(LastSyncPath, lastsync.ToString());
 
                         Console.WriteLine($"sync: end / {DateTime.Now.ToString(TimeFormat)}");
                     }
@@ -141,7 +144,7 @@ namespace JacRed.Engine
                         if (lastsync > 0)
                         {
                             FileDB.SaveChangesToFile();
-                            File.WriteAllText("lastsync.txt", lastsync.ToString());
+                            File.WriteAllText(LastSyncPath, lastsync.ToString());
                         }
                     }
                     catch { }

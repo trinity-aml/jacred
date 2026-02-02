@@ -61,8 +61,8 @@ namespace JacRed.Engine
                 }
                 #endregion
 
-                if (File.Exists("lastsync.txt"))
-                    File.Delete("lastsync.txt");
+                if (File.Exists(Path.Combine("Data", "temp", "lastsync.txt")))
+                    File.Delete(Path.Combine("Data", "temp", "lastsync.txt"));
             }
         }
         #endregion
