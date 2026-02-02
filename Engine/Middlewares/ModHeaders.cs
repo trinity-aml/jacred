@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using System;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -35,7 +36,7 @@ namespace JacRed.Engine.Middlewares
             return false;
         }
 
-        public Task Invoke(HttpContext httpContext)
+        public async Task Invoke(HttpContext httpContext)
         {
             httpContext.Response.Headers.Add("Access-Control-Allow-Credentials", "true");
             httpContext.Response.Headers.Add("Access-Control-Allow-Private-Network", "true");
@@ -69,7 +70,14 @@ namespace JacRed.Engine.Middlewares
                 }
             }
 
-            return _next(httpContext);
+            bool isCron = httpContext.Request.Path.Value?.StartsWith("/cron/") == true;
+            if (isCron)
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Cron task started: {httpContext.Request.Path}");
+
+            await _next(httpContext);
+
+            if (isCron)
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Cron task finished: {httpContext.Request.Path}");
         }
     }
 }
