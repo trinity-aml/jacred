@@ -39,8 +39,7 @@ namespace JacRed.Controllers.CRON
                 string cookie = AppInit.conf.Lostfilm.cookie;
 
                 ParserLog.Write("lostfilm", "Parse (page /new/) start");
-                bool _ = await ParsePage(host, cookie, 1, stopBeforeDate: null, startFromDate: null, preloadedHtml: null);
-                CleanupTempCache();
+                await ParsePage(host, cookie, 1, stopBeforeDate: null, startFromDate: null, preloadedHtml: null);
                 ParserLog.Write("lostfilm", $"Parse done in {sw.Elapsed.TotalSeconds:F1}s");
                 return "ok";
             }
@@ -56,12 +55,11 @@ namespace JacRed.Controllers.CRON
             }
         }
 
-        /// <summary>Парсит устаревшие страницы /new/page_N с пагинацией и фильтрами по датам.</summary>
-        /// <param name="maxpage">Макс. страниц (0 = по пагинации, но не более 100)</param>
-        /// <param name="stopBeforeDate">Остановиться, когда встретится раздача с датой &lt;= этой (dd.MM.yyyy)</param>
-        /// <param name="startFromDate">Не добавлять раздачи новее этой даты (dd.MM.yyyy) — только «старее или равно»</param>
+        /// <summary>Парсит страницы /new/ в указанном диапазоне. Без кэша, без фильтров по датам.</summary>
+        /// <param name="pageFrom">Начальная страница (1 = /new/, 2 = /new/page_2, ...)</param>
+        /// <param name="pageTo">Конечная страница включительно. Если больше реального числа страниц — обрезается.</param>
         [HttpGet]
-        public async Task<string> ParseOutdated(int maxpage = 20, string stopBeforeDate = null, string startFromDate = null)
+        public async Task<string> ParsePages(int pageFrom = 1, int pageTo = 1)
         {
             if (AppInit.conf == null || AppInit.conf.Lostfilm == null)
                 return "conf";
@@ -80,14 +78,10 @@ namespace JacRed.Controllers.CRON
                 string cookie = AppInit.conf.Lostfilm.cookie;
                 int delay = AppInit.conf.Lostfilm.parseDelay;
 
-                DateTime? stopDate = null;
-                if (!string.IsNullOrWhiteSpace(stopBeforeDate) && tParse.ParseCreateTime(stopBeforeDate.Trim(), "dd.MM.yyyy") != default)
-                    stopDate = tParse.ParseCreateTime(stopBeforeDate.Trim(), "dd.MM.yyyy");
-                DateTime? fromDate = null;
-                if (!string.IsNullOrWhiteSpace(startFromDate) && tParse.ParseCreateTime(startFromDate.Trim(), "dd.MM.yyyy") != default)
-                    fromDate = tParse.ParseCreateTime(startFromDate.Trim(), "dd.MM.yyyy");
+                if (pageFrom < 1) pageFrom = 1;
+                if (pageTo < pageFrom) pageTo = pageFrom;
 
-                ParserLog.Write("lostfilm", $"ParseOutdated start maxpage={maxpage} stopBeforeDate={stopBeforeDate} startFromDate={startFromDate} host={host}");
+                ParserLog.Write("lostfilm", $"ParsePages start pageFrom={pageFrom} pageTo={pageTo} host={host}");
 
                 int totalPages = 1;
                 string firstPageHtml = await HttpClient.Get($"{host}/new/", cookie: cookie, useproxy: AppInit.conf.Lostfilm.useproxy, httpversion: 2);
@@ -99,35 +93,138 @@ namespace JacRed.Controllers.CRON
                             totalPages = n;
                     if (totalPages > 100)
                         totalPages = 100;
-                    if (maxpage == 0)
-                        maxpage = totalPages;
-                    else if (maxpage > totalPages)
-                        maxpage = totalPages;
-                    ParserLog.Write("lostfilm", $"Pagination: totalPages={totalPages} will parse up to {maxpage}");
                 }
-                if (maxpage < 1)
-                    maxpage = 1;
+                if (pageTo > totalPages)
+                    pageTo = totalPages;
+                ParserLog.Write("lostfilm", $"Pagination: totalPages={totalPages} will parse pages {pageFrom}..{pageTo}");
 
-                for (int page = 1; page <= maxpage; page++)
+                for (int page = pageFrom; page <= pageTo; page++)
                 {
                     if (page > 1 && delay > 0)
                         await Task.Delay(delay);
 
-                    bool stop = await ParsePage(host, cookie, page, stopBeforeDate: stopDate, startFromDate: fromDate, page == 1 ? firstPageHtml : null);
-                    if (stop)
-                    {
-                        ParserLog.Write("lostfilm", $"Stopped at page {page} (reached stopBeforeDate)");
-                        break;
-                    }
+                    await ParsePage(host, cookie, page, stopBeforeDate: null, startFromDate: null, page == 1 ? firstPageHtml : null);
                 }
 
-                CleanupTempCache();
-                ParserLog.Write("lostfilm", $"ParseOutdated done in {sw.Elapsed.TotalSeconds:F1}s");
+                ParserLog.Write("lostfilm", $"ParsePages done in {sw.Elapsed.TotalSeconds:F1}s");
                 return "ok";
             }
             catch (Exception ex)
             {
-                ParserLog.Write("lostfilm", $"ParseOutdated error: {ex.Message}");
+                ParserLog.Write("lostfilm", $"ParsePages error: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                lock (_parseLock)
+                    _parseRunning = false;
+            }
+        }
+
+        /// <summary>Парсит страницу /series/{series}/seasons/ и добавляет торренты «полный сезон» (SD, 1080p, 720p) для каждого сезона с e=999.</summary>
+        /// <param name="series">Slug сериала, например Outer_Banks</param>
+        [HttpGet]
+        public async Task<string> ParseSeasonPacks(string series)
+        {
+            if (AppInit.conf == null || AppInit.conf.Lostfilm == null)
+                return "conf";
+            if (string.IsNullOrWhiteSpace(series))
+                return "series required";
+
+            lock (_parseLock)
+            {
+                if (_parseRunning)
+                    return "work";
+                _parseRunning = true;
+            }
+
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                string host = AppInit.conf.Lostfilm.host ?? "https://www.lostfilm.tv";
+                string cookie = AppInit.conf.Lostfilm.cookie;
+                series = series.Trim();
+
+                ParserLog.Write("lostfilm", $"ParseSeasonPacks start series={series}");
+
+                string seasonsUrl = $"{host}/series/{series}/seasons/";
+                string html = await HttpClient.Get(seasonsUrl, cookie: cookie, useproxy: AppInit.conf.Lostfilm.useproxy);
+                if (string.IsNullOrEmpty(html) || !html.Contains("LostFilm.TV"))
+                {
+                    ParserLog.Write("lostfilm", $"ParseSeasonPacks: empty or invalid response {seasonsUrl}");
+                    return "empty";
+                }
+
+                var (relased, russianName) = ParseRelasedAndNameFromHtml(html);
+                if (relased <= 0)
+                {
+                    ParserLog.Write("lostfilm", $"ParseSeasonPacks: no relased in HTML for {series}");
+                    return "no relased";
+                }
+                string originalname = series.Replace("_", " ");
+                string name = !string.IsNullOrWhiteSpace(russianName) ? russianName : originalname;
+
+                // Ссылки на полный сезон: /V/?c=...&s=N&e=999 (или e=999&s=N)
+                var vLinkRe = new Regex(@"href=""(/V/\?[^""]+)""", RegexOptions.IgnoreCase);
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var list = new List<TorrentDetails>();
+
+                foreach (Match m in vLinkRe.Matches(html))
+                {
+                    string vPath = m.Groups[1].Value;
+                    if (vPath.IndexOf("e=999", StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                    var sMatch = Regex.Match(vPath, @"[?&]s=(\d+)", RegexOptions.IgnoreCase);
+                    if (!sMatch.Success || !int.TryParse(sMatch.Groups[1].Value, out int seasonNum) || seasonNum <= 0)
+                        continue;
+                    string vFullUrl = vPath.StartsWith("http") ? vPath : host.TrimEnd('/') + (vPath.StartsWith("/") ? vPath : "/" + vPath);
+                    if (seen.Contains(vFullUrl))
+                        continue;
+                    seen.Add(vFullUrl);
+
+                    var magnets = await GetMagnetsFromVPage(host, cookie, vFullUrl);
+                    if (magnets.Count == 0)
+                    {
+                        ParserLog.Write("lostfilm", $"  no magnets: {series} s{seasonNum}");
+                        continue;
+                    }
+                    DateTime createTime = DateTime.UtcNow;
+                    foreach (var (magnet, quality, sizeName) in magnets)
+                    {
+                        string title = $"{name} / {originalname} / {seasonNum} сезон (полный сезон) [{relased}, {quality}]";
+                        string url = vFullUrl + "#" + quality;
+                        list.Add(new TorrentDetails
+                        {
+                            trackerName = "lostfilm",
+                            types = new[] { "serial" },
+                            url = url,
+                            title = title,
+                            sid = 1,
+                            createTime = createTime,
+                            name = name,
+                            originalname = originalname,
+                            relased = relased,
+                            magnet = magnet,
+                            sizeName = sizeName
+                        });
+                    }
+                    ParserLog.Write("lostfilm", $"  + {name} {seasonNum} сезон (полный): {magnets.Count} quality");
+                }
+
+                if (list.Count > 0)
+                {
+                    await FileDB.AddOrUpdate(list, (t, db) => Task.FromResult(true));
+                    ParserLog.Write("lostfilm", $"ParseSeasonPacks: added {list.Count} torrents");
+                }
+                else
+                    ParserLog.Write("lostfilm", "ParseSeasonPacks: no season-pack links found");
+
+                ParserLog.Write("lostfilm", $"ParseSeasonPacks done in {sw.Elapsed.TotalSeconds:F1}s");
+                return "ok";
+            }
+            catch (Exception ex)
+            {
+                ParserLog.Write("lostfilm", $"ParseSeasonPacks error: {ex.Message}");
                 throw;
             }
             finally
@@ -177,6 +274,10 @@ namespace JacRed.Controllers.CRON
                 await CollectFromHorBreaker(normalized, host, cookie, list, page);
                 source = "hor-breaker";
             }
+            int beforeMovies = list.Count;
+            await CollectFromMovies(normalized, host, cookie, list, page);
+            if (list.Count > beforeMovies)
+                source = source + "+movies:" + (list.Count - beforeMovies);
 
             DateTime? oldestOnPage = list.Count > 0 ? list.Min(t => t.createTime) : (DateTime?)null;
 
@@ -199,6 +300,8 @@ namespace JacRed.Controllers.CRON
             int added = 0, fromCache = 0, noMagnet = 0;
             await FileDB.AddOrUpdate(list, async (t, db) =>
             {
+                if (!string.IsNullOrEmpty(t.magnet))
+                    return true;
                 if (db.TryGetValue(t.url, out TorrentDetails cached) && !string.IsNullOrEmpty(cached.magnet))
                 {
                     fromCache++;
@@ -208,7 +311,9 @@ namespace JacRed.Controllers.CRON
                     return true;
                 }
 
-                var mag = await GetMagnet(host, cookie, t.url);
+                var mag = t.types != null && t.types.Contains("movie")
+                    ? await GetMagnetForMovie(host, cookie, t.url)
+                    : await GetMagnet(host, cookie, t.url);
                 if (string.IsNullOrEmpty(mag.magnet))
                 {
                     noMagnet++;
@@ -258,14 +363,12 @@ namespace JacRed.Controllers.CRON
                 DateTime createTime = tParse.ParseCreateTime(dateStr, "dd.MM.yyyy");
                 if (createTime == default)
                     createTime = DateTime.UtcNow;
-
-                var (relased, russianName) = await GetRelasedAndName(host, cookie, serieName);
+                int relased = createTime != default ? createTime.Year : 0;
                 if (relased <= 0)
                     continue;
-
                 seen.Add(urlPath);
                 string originalname = serieName.Replace("_", " ");
-                string name = !string.IsNullOrWhiteSpace(russianName) ? russianName : originalname;
+                string name = originalname;
                 list.Add(new TorrentDetails
                 {
                     trackerName = "lostfilm",
@@ -300,17 +403,15 @@ namespace JacRed.Controllers.CRON
                     continue;
                 if (createTime == default)
                     createTime = DateTime.UtcNow;
+                int relased = createTime != default ? createTime.Year : 0;
+                if (relased <= 0)
+                    continue;
 
                 string serieName = Regex.Match(urlPath, @"series/([^/]+)(?:/|$)").Groups[1].Value;
                 if (string.IsNullOrEmpty(serieName))
                     continue;
-
-                var (relased, russianName) = await GetRelasedAndName(host, cookie, serieName);
-                if (relased <= 0)
-                    continue;
-
                 string originalname = serieName.Replace("_", " ");
-                string seriesName = !string.IsNullOrWhiteSpace(russianName) ? russianName : nameFromAttr;
+                string seriesName = !string.IsNullOrWhiteSpace(nameFromAttr) ? nameFromAttr : originalname;
                 list.Add(new TorrentDetails
                 {
                     trackerName = "lostfilm",
@@ -345,15 +446,13 @@ namespace JacRed.Controllers.CRON
                     continue;
                 if (createTime == default)
                     createTime = DateTime.UtcNow;
+                int relased = createTime != default ? createTime.Year : 0;
+                if (relased <= 0)
+                    continue;
 
                 string serieName = Regex.Match(url, @"series/([^/]+)(?:/|$)").Groups[1].Value;
                 if (string.IsNullOrEmpty(serieName))
                     continue;
-
-                var (relased, _) = await GetRelasedAndName(host, cookie, serieName);
-                if (relased <= 0)
-                    continue;
-
                 list.Add(new TorrentDetails
                 {
                     trackerName = "lostfilm",
@@ -369,118 +468,220 @@ namespace JacRed.Controllers.CRON
             }
         }
 
-        /// <summary>Очистка кэша Data/temp/lostfilm: удаляем файлы старше 7 дней и при необходимости ограничиваем число файлов.</summary>
-        static void CleanupTempCache()
+        /// <summary>Собирает фильмы с /new/: ссылки на /movies/ и блоки с «Фильм» + дата. Для каждого получает V-страницу и добавляет раздачи по качествам (SD, 1080p, 720p).</summary>
+        static async Task CollectFromMovies(string html, string host, string cookie, List<TorrentDetails> list, int page)
         {
-            const string cacheDir = "Data/temp/lostfilm";
-            const int maxAgeDays = 7;
-            const int maxFiles = 2500;
-            const int keepFiles = 800;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var dateRe = new Regex(@"(\d{2}\.\d{2}\.\d{4})");
 
-            try
+            foreach (string row in html.Split(new[] { "class=\"hor-breaker dashed\"" }, StringSplitOptions.None).Skip(1))
             {
-                if (!System.IO.Directory.Exists(cacheDir))
-                    return;
+                if (string.IsNullOrWhiteSpace(row))
+                    continue;
+                string url = Regex.Match(row, @"href=""/([^""]+)""", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+                if (string.IsNullOrEmpty(url) || !url.StartsWith("movies/"))
+                    continue;
+                string leftPart = Regex.Match(row, @"<div class=""left-part"">([^<]+)</div>", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+                if (leftPart.IndexOf("Фильм", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                string name = Regex.Match(row, @"<div class=""name-ru"">([^<]+)</div>", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+                string originalname = Regex.Match(row, @"<div class=""name-en"">([^<]+)</div>", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+                string dateStr = Regex.Match(row, @"<div class=""right-part"">(\d{2}\.\d{2}\.\d{4})</div>", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(originalname) || string.IsNullOrEmpty(dateStr))
+                    continue;
 
-                var cutoff = DateTime.UtcNow.AddDays(-maxAgeDays);
-                var files = System.IO.Directory.GetFiles(cacheDir);
-                int deleted = 0;
+                string moviePageUrl = $"{host.TrimEnd('/')}/{url.TrimStart('/')}";
+                if (seen.Contains(moviePageUrl))
+                    continue;
+                seen.Add(moviePageUrl);
 
-                foreach (var path in files)
+                DateTime createTime = tParse.ParseCreateTime(dateStr, "dd.MM.yyyy");
+                if (createTime == default)
+                    createTime = DateTime.UtcNow;
+                int relased = createTime != default ? createTime.Year : 0;
+                if (relased <= 0)
+                    relased = createTime.Year;
+
+                string vPageUrl = await GetVUrlFromMoviePage(host, cookie, moviePageUrl);
+                if (string.IsNullOrEmpty(vPageUrl))
                 {
-                    try
-                    {
-                        var fi = new System.IO.FileInfo(path);
-                        if (fi.LastWriteTimeUtc < cutoff)
-                        {
-                            fi.Delete();
-                            deleted++;
-                        }
-                    }
-                    catch { /* один файл не удалился — не критично */ }
+                    ParserLog.Write("lostfilm", $"  movie no V link: {name}");
+                    continue;
                 }
 
-                if (files.Length - deleted > maxFiles)
+                var magnets = await GetMagnetsFromVPage(host, cookie, vPageUrl);
+                if (magnets.Count == 0)
                 {
-                    var byAge = new System.IO.DirectoryInfo(cacheDir)
-                        .GetFiles()
-                        .OrderBy(f => f.LastWriteTimeUtc)
-                        .ToList();
-                    foreach (var fi in byAge.Take(Math.Max(0, byAge.Count - keepFiles)))
-                    {
-                        try
-                        {
-                            fi.Delete();
-                            deleted++;
-                        }
-                        catch { }
-                    }
+                    ParserLog.Write("lostfilm", $"  movie no magnets: {name}");
+                    continue;
                 }
 
-                if (deleted > 0)
-                    ParserLog.Write("lostfilm", $"CleanupTempCache: removed {deleted} file(s) from {cacheDir}");
-            }
-            catch (Exception ex)
-            {
-                ParserLog.Write("lostfilm", $"CleanupTempCache: {ex.Message}");
+                string nameDec = HttpUtility.HtmlDecode(name);
+                string originalnameDec = HttpUtility.HtmlDecode(originalname);
+                foreach (var (magnet, quality, sizeName) in magnets)
+                {
+                    string q = NormalizeQuality(quality);
+                    string title = $"{nameDec} / {originalnameDec} [Фильм, {relased}, {q}]";
+                    list.Add(new TorrentDetails
+                    {
+                        trackerName = "lostfilm",
+                        types = new[] { "movie" },
+                        url = moviePageUrl + "#" + q,
+                        title = title,
+                        sid = 1,
+                        createTime = createTime,
+                        name = nameDec,
+                        originalname = originalnameDec,
+                        relased = relased,
+                        magnet = magnet,
+                        sizeName = sizeName ?? ""
+                    });
+                }
+                ParserLog.Write("lostfilm", $"  + movie {nameDec} ({magnets.Count} quality)");
             }
         }
 
-        /// <summary>Год выхода и русское название сериала (для поиска по русскому). Кэш: .relased и .name</summary>
-        static async Task<(int year, string russianName)> GetRelasedAndName(string host, string cookie, string serieName)
+        /// <summary>Со страницы фильма /movies/Slug извлекает ссылку на InSearch /V/?c=... (или редирект через v_search).</summary>
+        static async Task<string> GetVUrlFromMoviePage(string host, string cookie, string moviePageUrl)
         {
-            string dir = System.IO.Path.GetDirectoryName($"Data/temp/lostfilm/{serieName}.relased");
-            string pathRelased = $"Data/temp/lostfilm/{serieName}.relased";
-            string pathName = $"Data/temp/lostfilm/{serieName}.name";
-            if (System.IO.File.Exists(pathRelased))
-            {
-                if (int.TryParse(await System.IO.File.ReadAllTextAsync(pathRelased), out int cached))
-                {
-                    string russian = null;
-                    if (System.IO.File.Exists(pathName))
-                        russian = (await System.IO.File.ReadAllTextAsync(pathName)).Trim();
-                    ParserLog.Write("lostfilm", $"    getRelased {serieName}: cache={cached}" + (string.IsNullOrEmpty(russian) ? "" : $" name={russian}"));
-                    return (cached, russian);
-                }
-            }
             try
             {
-                string html = await HttpClient.Get($"{host}/series/{serieName}", cookie: cookie, useproxy: AppInit.conf.Lostfilm.useproxy);
+                string html = await HttpClient.Get(moviePageUrl, cookie: cookie, useproxy: AppInit.conf.Lostfilm.useproxy);
                 if (string.IsNullOrEmpty(html))
+                    return null;
+                var vMatch = Regex.Match(html, @"href=""(/V/\?[^""]+)""", RegexOptions.IgnoreCase);
+                if (vMatch.Success)
+                    return vMatch.Groups[1].Value.StartsWith("http") ? vMatch.Groups[1].Value : host.TrimEnd('/') + vMatch.Groups[1].Value;
+                var playMatch = Regex.Match(html, @"Play(?:Movie|Episode)\s*\(\s*['""]?(\d+)['""]?\s*\)", RegexOptions.IgnoreCase);
+                if (playMatch.Success)
                 {
-                    ParserLog.Write("lostfilm", $"    getRelased {serieName}: empty page");
-                    return (0, null);
+                    string id = playMatch.Groups[1].Value;
+                    string searchHtml = await HttpClient.Get($"{host}/v_search.php?a={id}", cookie: cookie, useproxy: AppInit.conf.Lostfilm.useproxy);
+                    if (string.IsNullOrEmpty(searchHtml))
+                        return null;
+                    var mMeta = Regex.Match(searchHtml, @"(?:content=""[^""]*url\s*=\s*|location\.replace\s*\(\s*[""'])([^""]+)");
+                    if (mMeta.Success)
+                        return mMeta.Groups[1].Value.Trim().StartsWith("http") ? mMeta.Groups[1].Value.Trim() : host.TrimEnd('/') + mMeta.Groups[1].Value.Trim();
+                    var hRef = Regex.Match(searchHtml, @"href=""(/V/\?[^""]+)""");
+                    if (hRef.Success)
+                        return host.TrimEnd('/') + hRef.Groups[1].Value;
                 }
-                var m = Regex.Match(html, @"itemprop=""dateCreated""\s+content=""(\d{4})-\d{2}-\d{2}""");
-                if (!m.Success || !int.TryParse(m.Groups[1].Value, out int year) || year <= 0)
-                {
-                    ParserLog.Write("lostfilm", $"    getRelased {serieName}: no dateCreated");
-                    return (0, null);
-                }
-                string russianName = null;
-                var og = Regex.Match(html, @"<meta\s+property=""og:title""\s+content=""([^""]+)""", RegexOptions.IgnoreCase);
-                if (og.Success)
-                    russianName = HttpUtility.HtmlDecode(og.Groups[1].Value.Trim());
-                if (string.IsNullOrWhiteSpace(russianName))
-                {
-                    var tit = Regex.Match(html, @"<title>([^<]+?)\.?\s*[–-]\s*LostFilm", RegexOptions.IgnoreCase);
-                    if (tit.Success)
-                        russianName = ShortenSeriesName(HttpUtility.HtmlDecode(tit.Groups[1].Value.Trim()));
-                }
-                else
-                    russianName = ShortenSeriesName(russianName);
-                System.IO.Directory.CreateDirectory(dir);
-                await System.IO.File.WriteAllTextAsync(pathRelased, year.ToString());
-                if (!string.IsNullOrWhiteSpace(russianName))
-                    await System.IO.File.WriteAllTextAsync(pathName, russianName);
-                ParserLog.Write("lostfilm", $"    getRelased {serieName}: fetched year={year}" + (string.IsNullOrEmpty(russianName) ? "" : $" name={russianName}"));
-                return (year, russianName);
+                return null;
             }
             catch (Exception ex)
             {
-                ParserLog.Write("lostfilm", $"    getRelased {serieName}: error {ex.Message}");
-                return (0, null);
+                ParserLog.Write("lostfilm", $"  GetVUrlFromMoviePage: {ex.Message}");
+                return null;
             }
+        }
+
+        /// <summary>Для фильма: получает V-URL со страницы фильма и возвращает первый доступный магнит (одно качество).</summary>
+        static async Task<(string magnet, string quality, string sizeName)> GetMagnetForMovie(string host, string cookie, string movieUrl)
+        {
+            string vPageUrl = await GetVUrlFromMoviePage(host, cookie, movieUrl);
+            if (string.IsNullOrEmpty(vPageUrl))
+                return default;
+            var list = await GetMagnetsFromVPage(host, cookie, vPageUrl);
+            if (list.Count > 0)
+                return list[0];
+            return default;
+        }
+
+        /// <summary>Извлекает год выхода и русское название из HTML страницы сериала или /seasons/. Без запросов — только парсинг.</summary>
+        static (int year, string russianName) ParseRelasedAndNameFromHtml(string html)
+        {
+            if (string.IsNullOrEmpty(html))
+                return (0, null);
+            var m = Regex.Match(html, @"itemprop=""dateCreated""\s+content=""(\d{4})-\d{2}-\d{2}""");
+            if (!m.Success || !int.TryParse(m.Groups[1].Value, out int year) || year <= 0)
+                return (0, null);
+            string russianName = null;
+            var og = Regex.Match(html, @"<meta\s+property=""og:title""\s+content=""([^""]+)""", RegexOptions.IgnoreCase);
+            if (og.Success)
+                russianName = HttpUtility.HtmlDecode(og.Groups[1].Value.Trim());
+            if (string.IsNullOrWhiteSpace(russianName))
+            {
+                var tit = Regex.Match(html, @"<title>([^<]+?)\.?\s*[–-]\s*LostFilm", RegexOptions.IgnoreCase);
+                if (tit.Success)
+                    russianName = ShortenSeriesName(HttpUtility.HtmlDecode(tit.Groups[1].Value.Trim()));
+            }
+            else
+                russianName = ShortenSeriesName(russianName);
+            return (year, russianName);
+        }
+
+        /// <summary>Парсит HTML страницы InSearch (V/?c=...) и возвращает все варианты качества с магнитами.</summary>
+        static async Task<List<(string magnet, string quality, string sizeName)>> ParseVPageQualityLinks(string host, string cookie, string searchHtml)
+        {
+            if (string.IsNullOrEmpty(searchHtml) || !searchHtml.Contains("inner-box--link"))
+                return new List<(string, string, string)>();
+
+            string flat = Regex.Replace(searchHtml, @"[\n\r\t]+", " ");
+            var linkRe = new Regex(@"<div\s+class=""inner-box--link\s+main""[^>]*><a\s+href=""([^""]+)""[^>]*>([^<]+)</a></div>", RegexOptions.IgnoreCase);
+            var results = new List<(string magnet, string quality, string sizeName)>();
+
+            foreach (Match m in linkRe.Matches(flat))
+            {
+                string linkText = m.Groups[2].Value;
+                string quality = Regex.Match(linkText, @"(2160p|2060p|1440p|1080p|720p)", RegexOptions.IgnoreCase).Groups[1].Value;
+                if (string.IsNullOrEmpty(quality))
+                    quality = Regex.Match(linkText, @"\b(1080|720)\b", RegexOptions.IgnoreCase).Groups[1].Value?.ToLowerInvariant();
+                if (string.IsNullOrEmpty(quality) && linkText.IndexOf("MP4", StringComparison.OrdinalIgnoreCase) >= 0)
+                    quality = "720p";
+                if (string.IsNullOrEmpty(quality))
+                    quality = Regex.Match(linkText, @"\bSD\b", RegexOptions.IgnoreCase).Success ? "SD" : null;
+                if (string.IsNullOrEmpty(quality))
+                    continue;
+                quality = NormalizeQuality(quality);
+                string torrentUrl = m.Groups[1].Value;
+                if (string.IsNullOrEmpty(torrentUrl))
+                    continue;
+                byte[] data = await HttpClient.Download(torrentUrl, cookie: cookie, referer: $"{host}/");
+                if (data == null || data.Length == 0)
+                    continue;
+                string magnet = BencodeTo.Magnet(data);
+                if (string.IsNullOrEmpty(magnet))
+                    continue;
+                string sizeName = BencodeTo.SizeName(data) ?? "";
+                results.Add((magnet, quality, sizeName));
+            }
+            return results;
+        }
+
+        /// <summary>Загружает страницу V (по прямой ссылке или через v_search.php) и возвращает HTML с inner-box--link.</summary>
+        static async Task<string> FetchVPageHtml(string host, string cookie, string vPageUrlOrNull, string episodeIdForSearch = null)
+        {
+            string searchHtml = null;
+            if (!string.IsNullOrEmpty(episodeIdForSearch))
+            {
+                searchHtml = await HttpClient.Get($"{host}/v_search.php?a={episodeIdForSearch}", cookie: cookie, useproxy: AppInit.conf.Lostfilm.useproxy);
+                if (string.IsNullOrEmpty(searchHtml))
+                    return null;
+            }
+            else if (!string.IsNullOrEmpty(vPageUrlOrNull))
+            {
+                string url = vPageUrlOrNull.StartsWith("http") ? vPageUrlOrNull : host.TrimEnd('/') + (vPageUrlOrNull.StartsWith("/") ? vPageUrlOrNull : "/" + vPageUrlOrNull);
+                searchHtml = await HttpClient.Get(url, cookie: cookie, referer: $"{host}/", useproxy: AppInit.conf.Lostfilm.useproxy);
+                if (string.IsNullOrEmpty(searchHtml))
+                    return null;
+            }
+            else
+                return null;
+
+            if (searchHtml.Contains("inner-box--link"))
+                return searchHtml;
+            string vPageUrl = null;
+            var mMeta = Regex.Match(searchHtml, @"(?:content=""[^""]*url\s*=\s*|location\.replace\s*\(\s*[""'])([^""]+)");
+            if (mMeta.Success)
+                vPageUrl = mMeta.Groups[1].Value.Trim();
+            if (string.IsNullOrEmpty(vPageUrl))
+                vPageUrl = Regex.Match(searchHtml, @"href=""(/V/\?[^""]+)""").Groups[1].Value.Trim();
+            if (string.IsNullOrEmpty(vPageUrl))
+                return searchHtml;
+            if (vPageUrl.StartsWith("/"))
+                vPageUrl = host.TrimEnd('/') + vPageUrl;
+            searchHtml = await HttpClient.Get(vPageUrl, cookie: cookie, referer: $"{host}/", useproxy: AppInit.conf.Lostfilm.useproxy) ?? "";
+            return searchHtml;
         }
 
         static async Task<(string magnet, string quality, string sizeName)> GetMagnet(string host, string cookie, string episodeUrl)
@@ -502,64 +703,15 @@ namespace JacRed.Controllers.CRON
                 string episodeId = epMatch.Groups[1].Value;
                 ParserLog.Write("lostfilm", $"      GetMagnet: episodeId={episodeId}");
 
-                // v_search.php возвращает 200 с HTML: meta refresh или location.replace на /V/?c=... (не HTTP 302), поэтому делаем второй запрос
-                string searchHtml = await HttpClient.Get($"{host}/v_search.php?a={episodeId}", cookie: cookie, useproxy: AppInit.conf.Lostfilm.useproxy);
-                if (string.IsNullOrEmpty(searchHtml))
+                string searchHtml = await FetchVPageHtml(host, cookie, null, episodeId);
+                if (string.IsNullOrEmpty(searchHtml) || !searchHtml.Contains("inner-box--link"))
                 {
-                    ParserLog.Write("lostfilm", $"      GetMagnet: empty v_search response");
+                    ParserLog.Write("lostfilm", $"      GetMagnet: no inner-box--link after V page");
                     return default;
                 }
-                if (!searchHtml.Contains("inner-box--link"))
-                {
-                    string vPageUrl = null;
-                    var mMeta = Regex.Match(searchHtml, @"(?:content=""[^""]*url\s*=\s*|location\.replace\s*\(\s*[""'])([^""]+)");
-                    if (mMeta.Success)
-                        vPageUrl = mMeta.Groups[1].Value.Trim();
-                    if (string.IsNullOrEmpty(vPageUrl))
-                        vPageUrl = Regex.Match(searchHtml, @"href=""(/V/\?[^""]+)""").Groups[1].Value.Trim();
-                    if (!string.IsNullOrEmpty(vPageUrl))
-                    {
-                        if (vPageUrl.StartsWith("/"))
-                            vPageUrl = host.TrimEnd('/') + vPageUrl;
-                        ParserLog.Write("lostfilm", $"      GetMagnet: fetch V page {vPageUrl.Substring(0, Math.Min(80, vPageUrl.Length))}...");
-                        searchHtml = await HttpClient.Get(vPageUrl, cookie: cookie, referer: $"{host}/", useproxy: AppInit.conf.Lostfilm.useproxy) ?? "";
-                    }
-                    if (string.IsNullOrEmpty(searchHtml) || !searchHtml.Contains("inner-box--link"))
-                    {
-                        ParserLog.Write("lostfilm", $"      GetMagnet: no inner-box--link after V page");
-                        return default;
-                    }
-                }
-                string flat = Regex.Replace(searchHtml, @"[\n\r\t]+", " ");
-                var linkRe = new Regex(@"<div\s+class=""inner-box--link\s+main""[^>]*><a\s+href=""([^""]+)""[^>]*>([^<]+)</a></div>", RegexOptions.IgnoreCase);
-                foreach (Match m in linkRe.Matches(flat))
-                {
-                    string linkText = m.Groups[2].Value;
-                    string quality = Regex.Match(linkText, @"(2160p|2060p|1440p|1080p|720p)", RegexOptions.IgnoreCase).Groups[1].Value;
-                    if (string.IsNullOrEmpty(quality))
-                        quality = Regex.Match(linkText, @"\b(1080|720)\b", RegexOptions.IgnoreCase).Groups[1].Value?.ToLowerInvariant();
-                    if (string.IsNullOrEmpty(quality))
-                        continue;
-                    quality = NormalizeQuality(quality);
-                    string torrentUrl = m.Groups[1].Value;
-                    if (string.IsNullOrEmpty(torrentUrl))
-                        continue;
-                    // ссылки с InSearch ведут на n.tracktor.site/td.php — без Referer: lostfilm не отдадут .torrent
-                    byte[] data = await HttpClient.Download(torrentUrl, cookie: cookie, referer: $"{host}/");
-                    if (data == null || data.Length == 0)
-                    {
-                        ParserLog.Write("lostfilm", $"      GetMagnet: tracktor empty response quality={quality}");
-                        continue;
-                    }
-                    string magnet = BencodeTo.Magnet(data);
-                    if (string.IsNullOrEmpty(magnet))
-                    {
-                        ParserLog.Write("lostfilm", $"      GetMagnet: BencodeTo.Magnet failed quality={quality}");
-                        continue;
-                    }
-                    string sizeName = BencodeTo.SizeName(data);
-                    return (magnet, quality, sizeName ?? "");
-                }
+                var list = await ParseVPageQualityLinks(host, cookie, searchHtml);
+                if (list.Count > 0)
+                    return list[0];
                 ParserLog.Write("lostfilm", $"      GetMagnet: no suitable quality link found");
             }
             catch (Exception ex)
@@ -567,6 +719,23 @@ namespace JacRed.Controllers.CRON
                 ParserLog.Write("lostfilm", $"      GetMagnet error: {ex.Message}");
             }
             return default;
+        }
+
+        /// <summary>По прямой ссылке на страницу V (например /V/?c=589&s=4&e=999) возвращает все качества (SD, 1080p, 720p) для полного сезона.</summary>
+        static async Task<List<(string magnet, string quality, string sizeName)>> GetMagnetsFromVPage(string host, string cookie, string vPageUrl)
+        {
+            try
+            {
+                string searchHtml = await FetchVPageHtml(host, cookie, vPageUrl, null);
+                if (string.IsNullOrEmpty(searchHtml) || !searchHtml.Contains("inner-box--link"))
+                    return new List<(string, string, string)>();
+                return await ParseVPageQualityLinks(host, cookie, searchHtml);
+            }
+            catch (Exception ex)
+            {
+                ParserLog.Write("lostfilm", $"      GetMagnetsFromVPage error: {ex.Message}");
+                return new List<(string, string, string)>();
+            }
         }
 
         /// <summary>Нормализует качество в единый формат: 1080/720 → 1080p/720p, SD без изменений.</summary>
@@ -583,6 +752,8 @@ namespace JacRed.Controllers.CRON
                 return "720p";
             if (string.Equals(q, "sd", StringComparison.OrdinalIgnoreCase))
                 return "SD";
+            if (string.Equals(q, "mp4", StringComparison.OrdinalIgnoreCase))
+                return "720p";
             return q;
         }
 

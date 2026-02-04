@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using JacRed.Engine;
 using JacRed.Engine.CORE;
+using JacRed.Models.Details;
 using Microsoft.AspNetCore.Mvc;
 
 namespace JacRed.Controllers
@@ -148,6 +149,7 @@ namespace JacRed.Controllers
                 using (var fdb = FileDB.OpenWrite(item.Key))
                 {
                     var keysToRemove = new List<string>();
+                    var toMigrate = new List<(string url, TorrentDetails t, string newKey)>();
                     foreach (var torrent in fdb.Database)
                     {
                         if (torrent.Value == null)
@@ -162,10 +164,20 @@ namespace JacRed.Controllers
                             torrent.Value.originalname = torrent.Value.title ?? torrent.Value.name ?? "";
                         torrent.Value._sn = StringConvert.SearchName(torrent.Value.name);
                         torrent.Value._so = StringConvert.SearchName(torrent.Value.originalname);
+                        // Если ключ бакета изменился (например починили name) — переносим торрент в правильный бакет, чтобы поиск находил по новому ключу
+                        string newKey = FileDB.KeyForTorrent(torrent.Value.name, torrent.Value.originalname);
+                        if (!string.IsNullOrEmpty(newKey) && newKey != item.Key && newKey.IndexOf(':') > 0)
+                            toMigrate.Add((torrent.Key, torrent.Value, newKey));
                     }
                     foreach (var k in keysToRemove)
                         fdb.Database.Remove(k);
-
+                    foreach (var (url, t, newKey) in toMigrate)
+                    {
+                        fdb.Database.Remove(url);
+                        FileDB.MigrateTorrentToNewKey(t, newKey);
+                    }
+                    if (fdb.Database.Count == 0)
+                        FileDB.RemoveKeyFromMasterDb(item.Key);
                     fdb.savechanges = true;
                 }
             }

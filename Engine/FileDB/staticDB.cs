@@ -90,7 +90,28 @@ namespace JacRed.Engine
             string search_originalname = StringConvert.SearchName(originalname);
             return $"{search_name}:{search_originalname}";
         }
+
+        /// <summary>Ключ бакета по name/originalname (для поиска и миграции).</summary>
+        public static string KeyForTorrent(string name, string originalname) => keyDb(name, originalname);
+
         #endregion
+
+        /// <summary>Перенос торрента в бакет с ключом newKey (после смены name/originalname). Вызывается из FileDB и из DevController.UpdateSearchName.</summary>
+        public static void MigrateTorrentToNewKey(TorrentDetails t, string newKey)
+        {
+            using (var fdb = OpenWrite(newKey))
+            {
+                fdb.AddOrUpdate(t);
+            }
+        }
+
+        /// <summary>Удаляет ключ из masterDb (например после миграции, когда бакет опустел). Вызывать только если бакет действительно пуст.</summary>
+        public static void RemoveKeyFromMasterDb(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                return;
+            masterDb.TryRemove(key, out _);
+        }
 
         #region AddOrUpdateMasterDb
         static void AddOrUpdateMasterDb(TorrentDetails torrent)

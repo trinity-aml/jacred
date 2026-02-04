@@ -151,6 +151,20 @@ namespace JacRed.Engine
                     AppendFdbLog(torrent, t);
 
                 t.checkTime = DateTime.Now;
+                // Только для Lostfilm: при смене name/originalname переносим торрент в бакет с правильным ключом (поиск по русскому названию). Остальные трекеры не трогаем.
+                if (string.Equals(t.trackerName, "lostfilm", StringComparison.OrdinalIgnoreCase))
+                {
+                    string newKey = keyDb(t.name, t.originalname);
+                    if (!string.IsNullOrEmpty(newKey) && newKey != fdbkey && newKey.IndexOf(':') > 0)
+                    {
+                        Database.Remove(t.url);
+                        savechanges = true;
+                        MigrateTorrentToNewKey(t, newKey);
+                        if (Database.Count == 0)
+                            RemoveKeyFromMasterDb(fdbkey);
+                        return;
+                    }
+                }
                 AddOrUpdateMasterDb(t);
             }
             else
