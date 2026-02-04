@@ -23,6 +23,7 @@ synctrackers:
   - megapeer
   - bitru
   - toloka
+  - mazepa
   - lostfilm
   - baibako
   - torrentby
@@ -102,6 +103,16 @@ Bitru:
 
 Toloka:
   host: https://toloka.to
+  useproxy: false
+  reqMinute: 8
+  parseDelay: 7000
+  log: false
+  login:
+    u: ""
+    p: ""
+
+Mazepa:
+  host: https://mazepa.to
   useproxy: false
   reqMinute: 8
   parseDelay: 7000
