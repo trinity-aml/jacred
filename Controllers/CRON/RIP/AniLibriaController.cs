@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using JacRed.Engine.CORE;
@@ -16,6 +16,8 @@ namespace JacRed.Controllers.CRON
 
         async public Task<string> Parse(int limit)
         {
+            if (AppInit.conf?.disable_trackers != null && AppInit.conf.disable_trackers.Contains("anilibria", StringComparer.OrdinalIgnoreCase))
+                return "disabled";
             if (workParse)
                 return "work";
 

@@ -48,9 +48,10 @@
 # */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/animelayer/parse"
 # */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/animedia/parse"
 
+# RIP (retired) — anilibria, anifilm, hdrezka: disabled by default via disable_trackers
 # */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/anilibria/parse"
-
 # */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/anifilm/parse"
+# */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/hdrezka/parse"
 
 # */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/anidub/parse"
 
@@ -58,5 +59,3 @@
 # */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/baibako/parse"
 
 # */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/hamsterstudio/parse"
-
-# */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/hdrezka/parse"
