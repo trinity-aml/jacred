@@ -173,5 +173,80 @@ namespace JacRed.Controllers
             FileDB.SaveChangesToFile();
             return Json(new { ok = true });
         }
+
+        /// <summary>
+        /// Scan DB for corrupt entries (null Value, missing name/originalname/trackerName). Read-only, no changes.
+        /// </summary>
+        public JsonResult FindCorrupt(int sampleSize = 20)
+        {
+            if (HttpContext.Connection.RemoteIpAddress.ToString() != "127.0.0.1")
+                return Json(new { badip = true });
+
+            int totalTorrents = 0;
+            int nullValueCount = 0;
+            int missingNameCount = 0;
+            int missingOriginalnameCount = 0;
+            int missingTrackerNameCount = 0;
+            var nullValueSample = new List<object>();
+            var missingNameSample = new List<object>();
+            var missingOriginalnameSample = new List<object>();
+            var missingTrackerNameSample = new List<object>();
+
+            foreach (var item in FileDB.masterDb.ToArray())
+            {
+                var db = FileDB.OpenRead(item.Key, cache: false);
+                if (db == null)
+                    continue;
+
+                foreach (var kv in db)
+                {
+                    totalTorrents++;
+                    string fdbKey = item.Key;
+                    string url = kv.Key;
+                    var t = kv.Value;
+
+                    if (t == null)
+                    {
+                        nullValueCount++;
+                        if (nullValueSample.Count < sampleSize)
+                            nullValueSample.Add(new { fdbKey, url });
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(t.trackerName))
+                    {
+                        missingTrackerNameCount++;
+                        if (missingTrackerNameSample.Count < sampleSize)
+                            missingTrackerNameSample.Add(new { fdbKey, url, title = t.title });
+                    }
+                    if (string.IsNullOrWhiteSpace(t.name))
+                    {
+                        missingNameCount++;
+                        if (missingNameSample.Count < sampleSize)
+                            missingNameSample.Add(new { fdbKey, url, title = t.title });
+                    }
+                    if (string.IsNullOrWhiteSpace(t.originalname))
+                    {
+                        missingOriginalnameCount++;
+                        if (missingOriginalnameSample.Count < sampleSize)
+                            missingOriginalnameSample.Add(new { fdbKey, url, title = t.title });
+                    }
+                }
+            }
+
+            return Json(new
+            {
+                ok = true,
+                totalFdbKeys = FileDB.masterDb.Count,
+                totalTorrents,
+                corrupt = new
+                {
+                    nullValue = new { count = nullValueCount, sample = nullValueSample },
+                    missingName = new { count = missingNameCount, sample = missingNameSample },
+                    missingOriginalname = new { count = missingOriginalnameCount, sample = missingOriginalnameSample },
+                    missingTrackerName = new { count = missingTrackerNameCount, sample = missingTrackerNameSample }
+                }
+            });
+        }
     }
 }
