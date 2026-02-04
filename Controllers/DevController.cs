@@ -248,5 +248,41 @@ namespace JacRed.Controllers
                 }
             });
         }
+
+        /// <summary>
+        /// Remove only corrupt entries where torrent.Value == null (e.g. empty url, broken refs). No other repairs.
+        /// </summary>
+        public JsonResult RemoveNullValues()
+        {
+            if (HttpContext.Connection.RemoteIpAddress.ToString() != "127.0.0.1")
+                return Json(new { badip = true });
+
+            int totalRemoved = 0;
+            int affectedFiles = 0;
+
+            foreach (var item in FileDB.masterDb.ToArray())
+            {
+                using (var fdb = FileDB.OpenWrite(item.Key))
+                {
+                    var keysToRemove = new List<string>();
+                    foreach (var torrent in fdb.Database)
+                    {
+                        if (torrent.Value == null)
+                            keysToRemove.Add(torrent.Key);
+                    }
+                    if (keysToRemove.Count > 0)
+                    {
+                        foreach (var k in keysToRemove)
+                            fdb.Database.Remove(k);
+                        totalRemoved += keysToRemove.Count;
+                        affectedFiles++;
+                        fdb.savechanges = true;
+                    }
+                }
+            }
+
+            FileDB.SaveChangesToFile();
+            return Json(new { ok = true, removed = totalRemoved, affectedFiles });
+        }
     }
 }
