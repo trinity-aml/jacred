@@ -39,17 +39,8 @@ namespace JacRed.Engine.Middlewares
 
         public async Task Invoke(HttpContext httpContext)
         {
-            httpContext.Response.Headers["Access-Control-Allow-Credentials"] = "true";
+            // CORS обрабатывается UseCors(); оставляем только заголовок для доступа из браузера к локальной сети
             httpContext.Response.Headers["Access-Control-Allow-Private-Network"] = "true";
-            httpContext.Response.Headers["Access-Control-Allow-Headers"] = "Accept, Origin, Content-Type";
-            httpContext.Response.Headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS";
-
-            if (httpContext.Request.Headers.TryGetValue("origin", out var origin))
-                httpContext.Response.Headers["Access-Control-Allow-Origin"] = origin.ToString();
-            else if (httpContext.Request.Headers.TryGetValue("referer", out var referer))
-                httpContext.Response.Headers["Access-Control-Allow-Origin"] = referer.ToString();
-            else
-                httpContext.Response.Headers["Access-Control-Allow-Origin"] = "*";
 
             bool fromLocalNetwork = IsLocalOrPrivate(httpContext.Connection.RemoteIpAddress);
 
@@ -57,7 +48,10 @@ namespace JacRed.Engine.Middlewares
             {
                 // External: restrict /cron/, /jsondb, /dev/ to local only
                 if (httpContext.Request.Path.Value.StartsWith("/cron/") || httpContext.Request.Path.Value.StartsWith("/jsondb") || httpContext.Request.Path.Value.StartsWith("/dev/"))
+                {
+                    httpContext.Response.StatusCode = httpContext.Request.Method == "OPTIONS" ? 204 : 403;
                     return;
+                }
 
                 // External: require API key when configured
                 if (!string.IsNullOrEmpty(AppInit.conf.apikey))
@@ -70,7 +64,10 @@ namespace JacRed.Engine.Middlewares
 
                     var match = Regex.Match(httpContext.Request.QueryString.Value ?? "", "(\\?|&)apikey=([^&]+)");
                     if (!match.Success || AppInit.conf.apikey != match.Groups[2].Value)
+                    {
+                        httpContext.Response.StatusCode = httpContext.Request.Method == "OPTIONS" ? 204 : 401;
                         return;
+                    }
                 }
             }
 
