@@ -208,14 +208,14 @@ namespace JacRed
         public int tracksmod = 0;
 
         public int tracksdelay = 20_000;
-		
-		public bool trackslog = false;
-		
-		public int tracksatempt = 20;
-		
-		public string trackscategory = "jacred";
-		
-		public class TracksIntervalConfig
+
+        public bool trackslog = false;
+
+        public int tracksatempt = 20;
+
+        public string trackscategory = "jacred";
+
+        public class TracksIntervalConfig
         {
             public int task0 { get; set; } = 180;
             public int task1 { get; set; } = 60;

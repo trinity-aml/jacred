@@ -25,7 +25,7 @@ namespace JacRed.Engine
             {
                 if (!firstRun)
                 {
-					await Task.Delay(TimeSpan.FromMinutes(typetask == 1 ? AppInit.conf.TracksInterval.task1 : AppInit.conf.TracksInterval.task0 + typetask));
+                    await Task.Delay(TimeSpan.FromMinutes(typetask == 1 ? AppInit.conf.TracksInterval.task1 : AppInit.conf.TracksInterval.task0 + typetask));
                 }
                 firstRun = false;
 
@@ -119,16 +119,16 @@ namespace JacRed.Engine
 
                             if ((typetask == 3 || typetask == 4) && DateTime.Now > starttime.AddMonths(2))
                                 break;
-							
-							if ((typetask != 1 && t.ffprobe_tryingdata >= AppInit.conf.tracksatempt))
-								continue;
+
+                            if ((typetask != 1 && t.ffprobe_tryingdata >= AppInit.conf.tracksatempt))
+                                continue;
 
                             if (TracksDB.Get(t.magnet) == null)
                             {
                                 if (typetask != 1)
-									t.ffprobe_tryingdata++;
-                                
-								await TracksDB.Add(t.magnet);
+                                    t.ffprobe_tryingdata++;
+
+                                await TracksDB.Add(t.magnet);
                             }
                         }
                         catch { }
