@@ -82,10 +82,10 @@ on:
         default: 14
 
       tag_latest:
-        description: "Add 'latest' tag (use only for full releases, not pre-releases)"
-        type: boolean
+        description: "Add 'latest' tag when 'true' (use only for full releases, not pre-releases)"
+        type: string
         required: false
-        default: false
+        default: "false"
 
     outputs:
       tags:
@@ -138,7 +138,7 @@ jobs:
             type=ref,event=branch,enable=${{ inputs.version == '' }}
             type=sha,enable=${{ inputs.version == '' }}
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=latest,enable=${{ inputs.tag_latest }}
+            type=raw,value=latest,enable=${{ inputs.tag_latest == 'true' }}
             ${{ inputs.extra_raw_tags }}
           labels: |
             org.opencontainers.image.title=${{ inputs.image }}
