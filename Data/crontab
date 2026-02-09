@@ -6,13 +6,11 @@
 
 */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/rutracker/parse"
 *    */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/rutracker/UpdateTasksParse"
-*    */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/rutracker/ParseAllTask"
-*/5  *   *   *   *    curl -s "http://127.0.0.1:9117/cron/rutracker/parseMagnet"
+*/5    * *   *   *    curl -s "http://127.0.0.1:9117/cron/rutracker/ParseAllTask"
 
 */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/kinozal/parse"
 *    */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/kinozal/UpdateTasksParse"
 */5  *   *   *   *    curl -s "http://127.0.0.1:9117/cron/kinozal/ParseAllTask"
-*    */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/kinozal/parseMagnet"
 
 */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/nnmclub/parse"
 *    */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/nnmclub/UpdateTasksParse"
@@ -31,16 +29,34 @@
 */5  *   *   *   *    curl -s "http://127.0.0.1:9117/cron/torrentby/ParseAllTask"
 
 */40 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/toloka/parse"
-*    */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/toloka/parseMagnet"
+*    */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/toloka/UpdateTasksParse"
+*/20 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/toloka/ParseAllTask"
+
+*/20 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/bitruapi/parse"
+# Разово подтянуть торренты после даты: curl -s "http://127.0.0.1:9119/cron/bitruapi/ParseFromDate?lastnewtor=23.10.2025"
 
 */40 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/mazepa/parse"
 
-*/15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/lostfilm/parse"
-# curl "http://127.0.0.1:9117/cron/lostfilm/ParsePages?pageFrom=1&pageTo=10"
+40   */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/anilibria/parse"
+*/5  *   *   *   *    curl -s "http://127.0.0.1:9117/cron/anilibria/parse?limit_page=1"
 
-# Bitru: официальный API (5 req/sec), movie+serial
-*/20 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/bitruapi/parse"
-# Разово подтянуть торренты после даты: curl -s "http://127.0.0.1:9117/cron/bitruapi/ParseFromDate?lastnewtor=23.10.2025"
+50   */6 *   *   *    curl -s "http://127.0.0.1:9117/cron/anidub/parse?limit_page=20"
+*/15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/anidub/parse?limit_page=2"
 
-# */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/animelayer/parse"
-# */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/animedia/parse"
+55   */6 *   *   *    curl -s "http://127.0.0.1:9117/cron/anistar/parse?limit_page=20"
+*/15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/anistar/parse?limit_page=2"
+
+45   */6 *   *   *    curl -s "http://127.0.0.1:9117/cron/leproduction/parse"
+*/15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/leproduction/parse?limit_page=1"
+
+*/15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/animelayer/parse"
+50   */8 *   *   *    curl -s "http://127.0.0.1:9117/cron/animelayer/parse?maxpage=90"
+
+*/40 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/anifilm/parse"
+50   1   *   *   *    curl -s "http://127.0.0.1:9117/cron/anifilm/parse?fullparse=true"
+
+*/15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/baibako/parse"
+50   2   *   *   *    curl -s "http://127.0.0.1:9117/cron/baibako/parse?maxpage=418"
+
+*/40 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/lostfilm/parse"
+# curl "http://127.0.0.1:9119/cron/lostfilm/ParsePages?pageFrom=1&pageTo=10"
