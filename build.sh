@@ -14,6 +14,7 @@ BUILD_ROOT="$SCRIPT_DIR/.builds"
 rm -rf "$BUILD_ROOT"
 mkdir -p "$BUILD_ROOT"
 trap 'rm -rf "$BUILD_ROOT"' EXIT
+rm -fr dist
 
 PUBLISH_OPTS=(
   --configuration Release
@@ -58,7 +59,6 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 # Replace dist with build result (avoids dist/ from project being copied into publish output)
-rm -fr dist/*
 echo "==> Writing to $OUTPUT_BASE ..."
 OUTPUT_NEW="$(mktemp -d "${OUTPUT_BASE}.new.XXXXXX")"
 mkdir -p "$OUTPUT_NEW"
