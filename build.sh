@@ -48,7 +48,7 @@ dotnet restore --verbosity minimal
 PLATFORMS=(
   linux-arm64
   linux-amd64
-  windows-x64
+  win-x64
   osx-arm64
   osx-amd64
 )
@@ -58,6 +58,7 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 # Replace dist with build result (avoids dist/ from project being copied into publish output)
+rm -fr dist/*
 echo "==> Writing to $OUTPUT_BASE ..."
 OUTPUT_NEW="$(mktemp -d "${OUTPUT_BASE}.new.XXXXXX")"
 mkdir -p "$OUTPUT_NEW"

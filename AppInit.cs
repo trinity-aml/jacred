@@ -172,12 +172,14 @@ namespace JacRed
                 case "mazepa": return conf.Mazepa.log;
                 case "torrentby": return conf.TorrentBy.log;
                 case "lostfilm": return conf.Lostfilm.log;
+                case "anidub": return conf.Anidub.log;
+                case "leproduction": return conf.Leproduction.log;
+                case "anistar": return conf.Anistar.log;
                 default: return false;
             }
         }
         #endregion
-
-
+        
         public string listenip = "any";
 
         public int listenport = 9117;
@@ -272,9 +274,9 @@ namespace JacRed
 
         public int timeSyncSpidr = 60; // минут (30, 60, 120 — без случайного смещения)
 
-        public TrackerSettings Rutor = new TrackerSettings("http://rutor.info");
+        public TrackerSettings Rutor = new TrackerSettings("https://rutor.is");
 
-        public TrackerSettings Megapeer = new TrackerSettings("http://megapeer.vip");
+        public TrackerSettings Megapeer = new TrackerSettings("https://megapeer.vip");
 
         public TrackerSettings TorrentBy = new TrackerSettings("https://torrent.by");
 
@@ -292,18 +294,23 @@ namespace JacRed
 
         public TrackerSettings Selezen = new TrackerSettings("https://open.selezen.org");
 
-        public TrackerSettings Anilibria = new TrackerSettings("https://api.anilibria.tv");
+        public TrackerSettings Anilibria = new TrackerSettings("https://aniliberty.top");
 
-        public TrackerSettings Animelayer = new TrackerSettings("http://animelayer.ru");
+        public TrackerSettings Animelayer = new TrackerSettings("https://animelayer.ru");
 
         public TrackerSettings Anifilm = new TrackerSettings("https://anifilm.net");
+        
+        public TrackerSettings Anidub = new TrackerSettings("https://tr.anidub.com");
+        
+        public TrackerSettings Leproduction = new TrackerSettings("https://www.le-production.tv");
+        
+        public TrackerSettings Anistar = new TrackerSettings("https://anistar.org");
 
         public TrackerSettings Rezka = new TrackerSettings("https://rezka.cc");
 
         public TrackerSettings Baibako = new TrackerSettings("http://baibako.tv");
 
         public TrackerSettings Lostfilm = new TrackerSettings("https://www.lostfilm.tv");
-
 
         public ProxySettings proxy = new ProxySettings();
 
