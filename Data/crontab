@@ -20,9 +20,8 @@
 *    */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/selezen/UpdateTasksParse"
 */5  *   *   *   *    curl -s "http://127.0.0.1:9117/cron/selezen/ParseAllTask"
 
-0   *   *   *   *    curl -s "http://127.0.0.1:9117/cron/megapeer/parse"
-5   */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/megapeer/UpdateTasksParse"
-30  *   *   *   *    curl -s "http://127.0.0.1:9117/cron/megapeer/ParseAllTask"
+*/15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/megapeer/parse"
+*    */8 *   *   *    curl -s "http://127.0.0.1:9117/cron/megapeer/parse?maxpage=10"
 
 */15 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/torrentby/parse"
 *    */4 *   *   *    curl -s "http://127.0.0.1:9117/cron/torrentby/UpdateTasksParse"

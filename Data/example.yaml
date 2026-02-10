@@ -59,7 +59,7 @@ evercache:
 
 # Tracker settings (optional; defaults are used if omitted)
 Rutor:
-  host: http://rutor.info
+  host: https://rutor.is
   alias: "" # e.g. http://rutor....onion
   useproxy: false
   reqMinute: 8
@@ -67,8 +67,9 @@ Rutor:
   log: false
 
 Megapeer:
-  host: http://megapeer.vip
+  host: https://megapeer.vip
   alias: ""
+  cookie: "cloud flare cookie"
   useproxy: false
   reqMinute: 8
   parseDelay: 7000
@@ -148,14 +149,14 @@ Selezen:
     p: ""
 
 Anilibria:
-  host: https://api.anilibria.tv
+  host: https://aniliberty.top
   alias: ""
   useproxy: false
   reqMinute: 8
   parseDelay: 7000
 
 Animelayer:
-  host: http://animelayer.ru
+  host: https://animelayer.ru
   useproxy: false
   reqMinute: 8
   parseDelay: 7000
