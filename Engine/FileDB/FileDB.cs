@@ -31,9 +31,70 @@ namespace JacRed.Engine
         #endregion
 
         #region AddOrUpdate
+        /// <summary>Извлекает числовой ID раздачи из URL трекера. При обновлении раздачи на трекере меняется slug, но ID остаётся — без этого создавались бы дубликаты.</summary>
+        static int GetTorrentIdFromUrl(string trackerName, string url)
+        {
+            if (string.IsNullOrEmpty(url)) return 0;
+
+            // Rutor: .../torrent/1070749/...
+            if (string.Equals(trackerName, "rutor", StringComparison.OrdinalIgnoreCase))
+            {
+                var m = Regex.Match(url, @"/torrent/(\d+)");
+                return m.Success && int.TryParse(m.Groups[1].Value, out int id) ? id : 0;
+            }
+
+            // TorrentBy: host/{id}/{slug} - ID is first numeric segment after host
+            if (string.Equals(trackerName, "torrentby", StringComparison.OrdinalIgnoreCase))
+            {
+                // Extract path after host, then get first numeric segment
+                var pathMatch = Regex.Match(url, @"https?://[^/]+/(\d+)/");
+                if (pathMatch.Success && int.TryParse(pathMatch.Groups[1].Value, out int id))
+                    return id;
+
+                // Fallback: match any numeric segment at start of path
+                var m = Regex.Match(url, @"/(\d+)/");
+                return m.Success && int.TryParse(m.Groups[1].Value, out int id2) ? id2 : 0;
+            }
+
+            // Megapeer: .../torrent/{id}/{slug} - по комментарию в коде может быть slug
+            if (string.Equals(trackerName, "megapeer", StringComparison.OrdinalIgnoreCase))
+            {
+                var m = Regex.Match(url, @"/torrent/(\d+)");
+                return m.Success && int.TryParse(m.Groups[1].Value, out int id) ? id : 0;
+            }
+
+            return 0;
+        }
+
         public void AddOrUpdate(TorrentBaseDetails torrent)
         {
-            if (Database.TryGetValue(torrent.url, out TorrentDetails t))
+            bool foundById = false;
+            if (!Database.TryGetValue(torrent.url, out TorrentDetails t))
+            {
+                int torrentId = GetTorrentIdFromUrl(torrent.trackerName, torrent.url);
+                if (torrentId > 0)
+                {
+                    var sameTrackerEntries = Database
+                        .Where(kv => string.Equals(kv.Value.trackerName, torrent.trackerName, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    foreach (var kv in sameTrackerEntries)
+                    {
+                        // Check if existing torrent has same tracker and same ID
+                        int existingId = GetTorrentIdFromUrl(torrent.trackerName, kv.Key);
+                        if (existingId == torrentId)
+                        {
+                            Database.Remove(kv.Key);
+                            t = kv.Value;
+                            t.url = torrent.url;
+                            foundById = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (t != null)
             {
                 bool updateFull = false;
 
@@ -79,6 +140,12 @@ namespace JacRed.Engine
                 {
                     t.title = torrent.title;
                     upt(true);
+                }
+
+                if (torrent.createTime != default && torrent.createTime > t.createTime)
+                {
+                    t.createTime = torrent.createTime;
+                    upt(updatetime: false);
                 }
 
                 if (!string.IsNullOrWhiteSpace(torrent.magnet) && torrent.magnet != t.magnet)
@@ -170,6 +237,8 @@ namespace JacRed.Engine
                     }
                 }
                 AddOrUpdateMasterDb(t);
+                if (foundById)
+                    Database.TryAdd(t.url, t);
             }
             else
             {

@@ -20,6 +20,7 @@ CRON_USER="${SUDO_USER:-root}"
 DOWNLOAD_DB=0   # 0 = skip DB download (use --no-download-db)
 REMOVE=0
 UPDATE=0
+PRE_RELEASE=0
 CLEANUP_PATHS=()
 ARCH=""
 PUBLISH_URL=""
@@ -40,6 +41,7 @@ Install, update, or remove JacRed. Run as any user; sudo will be used when neede
 
 Options:
   --no-download-db    Do not download or unpack the initial database (install only)
+  --pre-release       Install or update from latest pre-release (e.g. 2.0.0-dev1)
   --update            Update app from latest release (saves DB, replaces files, restarts)
   --remove            Fully remove JacRed (service, cron, app directory)
   -h, --help          Show this help and exit
@@ -48,6 +50,8 @@ Examples:
   $SCRIPT_NAME
   $SCRIPT_NAME --no-download-db
   $SCRIPT_NAME --update
+  $SCRIPT_NAME --pre-release
+  $SCRIPT_NAME --update --pre-release
   $SCRIPT_NAME --remove
 
 Run as a specific user (cron added/removed for that user):
@@ -78,6 +82,32 @@ detect_arch() {
   esac
 }
 
+get_prerelease_url() {
+  local asset_name="jacred-linux-${ARCH}.zip"
+  local api_url="https://api.github.com/repos/jacred-fdb/jacred/releases"
+  local url
+  url=$(python3 -c "
+import json, sys, urllib.request
+try:
+    req = urllib.request.Request('$api_url', headers={'Accept': 'application/vnd.github+json'})
+    data = json.loads(urllib.request.urlopen(req).read())
+except Exception as e:
+    sys.stderr.write(str(e))
+    sys.exit(2)
+for r in data:
+    if r.get('prerelease'):
+        for a in r.get('assets', []):
+            if a.get('name') == '$asset_name':
+                print(a['browser_download_url'])
+                sys.exit(0)
+sys.exit(1)
+" 2>/dev/null) || {
+    log_err "Could not find pre-release asset $asset_name (python3 required for --pre-release). Check GitHub and network."
+    exit 1
+  }
+  PUBLISH_URL="$url"
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -87,6 +117,10 @@ parse_args() {
         ;;
       --no-download-db)
         DOWNLOAD_DB=0
+        shift
+        ;;
+      --pre-release)
+        PRE_RELEASE=1
         shift
         ;;
       --remove)
@@ -112,7 +146,6 @@ require_root() {
   fi
 }
 
-# Run a command as CRON_USER (root or via su).
 run_as_cron_user() {
   if [[ "$CRON_USER" == "root" ]]; then
     "$@"
@@ -314,8 +347,14 @@ main() {
     exit 1
   fi
   ARCH=$(detect_arch)
-  PUBLISH_URL="${RELEASE_BASE}/jacred-linux-${ARCH}.zip"
-  log_info "Using release asset: jacred-linux-${ARCH}.zip"
+  if [[ "$PRE_RELEASE" -eq 1 ]]; then
+    log_info "Resolving latest pre-release (e.g. 2.0.0-dev1)..."
+    get_prerelease_url
+    log_info "Using pre-release asset: $PUBLISH_URL"
+  else
+    PUBLISH_URL="${RELEASE_BASE}/jacred-linux-${ARCH}.zip"
+    log_info "Using release asset: jacred-linux-${ARCH}.zip"
+  fi
 
   if [[ "$REMOVE" -eq 1 ]]; then
     do_remove

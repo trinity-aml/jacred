@@ -83,8 +83,6 @@ WORKDIR /app
 COPY --from=build --chown=jacred:jacred --chmod=550 /dist/JacRed /app/JacRed
 COPY --from=build --chown=jacred:jacred --chmod=550 /dist/wwwroot /app/wwwroot
 COPY --from=build --chown=jacred:jacred --chmod=550 /dist/Data /app/Data
-# Default config at /app/init.conf (app reads "init.conf" from current directory)
-COPY --chown=jacred:jacred --chmod=640 Data/init.conf /app/init.conf
 COPY --chown=jacred:jacred --chmod=550 entrypoint.sh /entrypoint.sh
 
 # Environment variables

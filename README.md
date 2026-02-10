@@ -36,6 +36,7 @@ curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | bas
 | Опция | Описание |
 |-------|----------|
 | `--no-download-db` | Не скачивать и не распаковывать базу (только при установке) |
+| `--pre-release` | Установить или обновить из последнего pre-release (например, 2.0.0-dev1) |
 | `--update` | Обновить приложение с последнего релиза (сохранить БД, заменить файлы, перезапустить) |
 | `--remove` | Полностью удалить JacRed (сервис, cron, каталог приложения) |
 | `-h`, `--help` | Показать справку |
@@ -43,14 +44,30 @@ curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | bas
 **Примеры:**
 
 ```bash
-# Обычная установка
+# Обычная установка (одна команда)
 curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | bash
 
-# Установка без загрузки базы
+# Установка без загрузки базы (одна команда)
 curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | bash -s -- --no-download-db
+
+# Скачать скрипт и запустить с аргументами
+curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh -o jacred.sh
+chmod +x jacred.sh
+sudo ./jacred.sh --no-download-db
+
+# Установка pre-release версии
+curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | bash -s -- --pre-release
+
+# Или скачать и запустить pre-release
+curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh -o jacred.sh
+chmod +x jacred.sh
+sudo ./jacred.sh --pre-release
 
 # Обновление уже установленного приложения
 sudo /opt/jacred/jacred.sh --update
+
+# Обновление до pre-release версии
+sudo /opt/jacred/jacred.sh --update --pre-release
 
 # Удаление
 sudo /opt/jacred/jacred.sh --remove
@@ -228,7 +245,60 @@ Anifilm, AniLibria, HDRezka.
 
 ## Docker
 
-<https://github.com/pavelpikta/docker-jacred-fdb>
+Образ можно запускать через **Docker** или **Docker Compose**. Конфигурация (`init.yaml` или `init.conf`) и данные (база fdb, логи) хранятся в томах; при первом запуске из образа копируются файлы по умолчанию из **`Data/`**.
+
+### Docker Run
+
+```bash
+docker run -d \
+  --name jacred \
+  -p 9117:9117 \
+  -v jacred-config:/app/config \
+  -v jacred-data:/app/Data \
+  --restart unless-stopped \
+  ghcr.io/jacred-fdb/jacred:latest
+```
+
+### Docker Compose
+
+```yaml
+name: jacred
+
+services:
+  jacred:
+    image: ghcr.io/jacred-fdb/jacred:latest
+    container_name: jacred
+    restart: unless-stopped
+    ports:
+      - "9117:9117"
+    volumes:
+      - jacred-config:/app/config
+      - jacred-data:/app/Data
+    environment:
+      - TZ=Europe/London
+      - UMASK=0027
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-s", "--max-time", "10", "http://127.0.0.1:9117/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+
+volumes:
+  jacred-config:
+  jacred-data:
+```
+
+**Полезно:**
+
+- **Конфиг:** после первого запуска настройте **`init.yaml`** или **`init.conf`** в томе `jacred-config` (на хосте: каталог тома в `docker volume inspect jacred-config` → `Mountpoint`).
+- **Порты:** веб-интерфейс и API доступны на порту **9117** (при необходимости измените маппинг `ports` и `listenport` в конфиге).
+- **Память:** при большой базе или активном парсинге увеличьте лимит `memory` в `deploy.resources.limits`.
+- **Сборка своего образа:** в корне репозитория выполните `docker build -t jacred .` и в примерах выше замените образ на `jacred:latest`.
 
 ---
 

@@ -7,18 +7,34 @@ cleanup() {
 }
 trap cleanup TERM INT
 
-if [ ! -f /app/config/init.conf ]; then
-    echo "Initializing configuration..."
-    cp /app/init.conf /app/config/init.conf
-    chmod 640 /app/config/init.conf
-else
-    echo "Using existing configuration..."
+# Config priority: init.yaml > init.conf (same as application)
+if [ -f /app/config/init.yaml ]; then
+    echo "Using existing configuration (init.yaml)..."
+    cp /app/config/init.yaml /app/init.yaml
+    chmod 640 /app/init.yaml
+    rm -f /app/init.conf
+elif [ -f /app/config/init.conf ]; then
+    echo "Using existing configuration (init.conf)..."
     cp /app/config/init.conf /app/init.conf
     chmod 640 /app/init.conf
+    rm -f /app/init.yaml
+else
+    echo "Initializing configuration..."
+    if [ -f /app/Data/init.yaml ]; then
+        cp /app/Data/init.yaml /app/config/init.yaml
+        cp /app/Data/init.yaml /app/init.yaml
+        chmod 640 /app/config/init.yaml /app/init.yaml
+        rm -f /app/init.conf
+    else
+        cp /app/Data/init.conf /app/config/init.conf
+        cp /app/Data/init.conf /app/init.conf
+        chmod 640 /app/config/init.conf /app/init.conf
+        rm -f /app/init.yaml
+    fi
 fi
 
-if [ ! -r /app/init.conf ]; then
-    echo "ERROR: Cannot read configuration file" >&2
+if [ ! -r /app/init.yaml ] && [ ! -r /app/init.conf ]; then
+    echo "ERROR: Cannot read configuration file (init.yaml or init.conf)" >&2
     exit 1
 fi
 

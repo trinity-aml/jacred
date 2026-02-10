@@ -1,0 +1,30 @@
+name: jacred
+
+services:
+  jacred:
+    image: ghcr.io/jacred-fdb/jacred:latest
+    container_name: jacred
+    restart: unless-stopped
+    ports:
+      - "9117:9117"
+    volumes:
+      - jacred-config:/app/config
+      - jacred-data:/app/Data
+    environment:
+      - TZ=Europe/London
+      - UMASK=0027
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-s", "--max-time", "10", "http://127.0.0.1:9117/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 4096M
+          cpus: "4"
+
+volumes:
+  jacred-config:
+  jacred-data:
