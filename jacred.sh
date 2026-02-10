@@ -211,8 +211,6 @@ set_install_ownership() {
   chown -R "${JACRED_USER}:${JACRED_USER}" "$INSTALL_ROOT"
 }
 
-# --- Install ---
-
 install_app() {
   log_info "Downloading and extracting application (jacred-linux-${ARCH}.zip)..."
   mkdir -p "$INSTALL_ROOT"
@@ -255,9 +253,17 @@ install_cron() {
     log_info "Data/crontab not found, skipping crontab install"
     return 0
   fi
-  log_info "Installing crontab from Data/crontab for user: $CRON_USER"
-  run_as_cron_user crontab "$crontab_file"
-  log_info "Crontab installed"
+  log_info "Adding jacred cron jobs to existing crontab for user: $CRON_USER"
+  local current filtered new_crontab
+  current="$(run_as_cron_user crontab -l 2>/dev/null)" || current=""
+  filtered="$(printf '%s\n' "$current" | grep -vF "$CRON_JACRED_MARKER" || true)"
+  if [[ -n "${filtered//[$'\n\r\t ']}" ]]; then
+    new_crontab="${filtered}"$'\n'"$(cat "$crontab_file")"
+  else
+    new_crontab="$(cat "$crontab_file")"
+  fi
+  printf '%s\n' "$new_crontab" | run_as_cron_user crontab -
+  log_info "Crontab updated (existing entries preserved)"
 }
 
 install_database() {
