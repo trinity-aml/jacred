@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build JacRed for linux-arm64, linux-amd64, and windows-x64, osx-arm64, and osx-amd64
+# Build JacRed for current architecture by default, or all architectures with --all flag
 # Output: dist/<platform>/
 
 set -euo pipefail
@@ -8,6 +8,33 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 OUTPUT_BASE="${OUTPUT_BASE:-$SCRIPT_DIR/dist}"
+
+# Check for --all flag
+BUILD_ALL=false
+if [[ "${1:-}" == "--all" ]]; then
+  BUILD_ALL=true
+fi
+
+# Detect current OS and architecture
+detect_current_platform() {
+  local os=""
+  local arch=""
+  
+  case "$(uname -s)" in
+    Linux*)   os="linux" ;;
+    Darwin*)  os="osx" ;;
+    MINGW*|MSYS*|CYGWIN*) os="windows" ;;
+    *)        echo "Unsupported OS: $(uname -s)" >&2; exit 1 ;;
+  esac
+  
+  case "$(uname -m)" in
+    x86_64|amd64) arch="amd64" ;;
+    arm64|aarch64) arch="arm64" ;;
+    *)        echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+  esac
+  
+  echo "${os}-${arch}"
+}
 
 # Build to a temp dir in project root so existing dist/ is never copied into a later publish output
 BUILD_ROOT="$SCRIPT_DIR/.builds"
@@ -45,13 +72,22 @@ build_for() {
 echo "==> Restoring packages..."
 dotnet restore --verbosity minimal
 
-PLATFORMS=(
+ALL_PLATFORMS=(
   linux-arm64
   linux-amd64
   windows-x64
   osx-arm64
   osx-amd64
 )
+
+if [[ "$BUILD_ALL" == "true" ]]; then
+  PLATFORMS=("${ALL_PLATFORMS[@]}")
+  echo "==> Building for all platforms..."
+else
+  CURRENT_PLATFORM=$(detect_current_platform)
+  PLATFORMS=("$CURRENT_PLATFORM")
+  echo "==> Building for current platform: $CURRENT_PLATFORM"
+fi
 
 for platform in "${PLATFORMS[@]}"; do
   build_for "$platform" "$BUILD_ROOT/$platform" "$platform"
