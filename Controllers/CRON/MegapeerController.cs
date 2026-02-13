@@ -409,6 +409,7 @@ namespace JacRed.Controllers.CRON
                 var info = await GetDetailsInfoWithRetry(t.url, attempts: 3, errors: errors);
                 string magnet = info.magnet;
                 string orig = info.originalname;
+                string nm = info.name;
 
                 // fallback: /download -> magnet
                 if (string.IsNullOrWhiteSpace(magnet) && !string.IsNullOrWhiteSpace(t.downloadId))
@@ -425,6 +426,9 @@ namespace JacRed.Controllers.CRON
                     }
                     catch { }
                 }
+
+                if (!string.IsNullOrWhiteSpace(nm))
+                    t.name = nm;
 
                 if (!string.IsNullOrWhiteSpace(orig))
                     t.originalname = orig;
@@ -471,7 +475,7 @@ namespace JacRed.Controllers.CRON
         #endregion
 
         #region Details helpers (magnet + originalname)
-        async Task<(string magnet, string originalname)> GetDetailsInfoWithRetry(string detailsUrl, int attempts = 3, List<string> errors = null)
+        async Task<(string magnet, string originalname, string name)> GetDetailsInfoWithRetry(string detailsUrl, int attempts = 3, List<string> errors = null)
         {
             await Task.Delay(NextDetailsDelayMs());
 
@@ -513,39 +517,46 @@ namespace JacRed.Controllers.CRON
                     if (mm.Success)
                         magnet = HttpUtility.HtmlDecode(mm.Groups[1].Value);
 
-                    // originalname
+                    // name/originalname (из карточки "Информация о фильме")
+                    string name = null;
                     string original = null;
 
-                    // <b>Оригинальное название:</b> Xxx<br>
-                    var mo1 = Regex.Match(html, @"Оригинальное\s*название\s*:\s*</b>\s*([^<\r\n]+)", RegexOptions.IgnoreCase);
+                    string Clean(string v)
+                    {
+                        if (string.IsNullOrWhiteSpace(v))
+                            return null;
+                        v = HttpUtility.HtmlDecode(v);
+                        v = Regex.Replace(v, @"[\n\r\t ]+", " ").Replace("\u00A0", " ").Trim();
+                        return string.IsNullOrWhiteSpace(v) ? null : v;
+                    }
+
+                    // <b>Название</b>: Xxx<br>  или  <font ...><b>Название</b></font>: Xxx<br>
+                    var mn1 = Regex.Match(html, @"<b>\s*Название\s*</b>\s*:\s*([^<\r\n]+)", RegexOptions.IgnoreCase);
+                    if (!mn1.Success)
+                        mn1 = Regex.Match(html, @"<font[^>]*>\s*<b>\s*Название\s*</b>\s*</font>\s*:\s*([^<\r\n]+)", RegexOptions.IgnoreCase);
+                    if (mn1.Success)
+                        name = Clean(mn1.Groups[1].Value);
+
+                    // <b>Оригинальное название</b>: Xxx<br>  или  <font ...><b>Оригинальное название</b></font>: Xxx<br>
+                    var mo1 = Regex.Match(html, @"<b>\s*Оригинальное\s*название\s*</b>\s*:\s*([^<\r\n]+)", RegexOptions.IgnoreCase);
+                    if (!mo1.Success)
+                        mo1 = Regex.Match(html, @"<font[^>]*>\s*<b>\s*Оригинальное\s*название\s*</b>\s*</font>\s*:\s*([^<\r\n]+)", RegexOptions.IgnoreCase);
+                    if (!mo1.Success)
+                        mo1 = Regex.Match(html, @"Оригинальное\s*название\s*</b>\s*</font>\s*:\s*([^<\r\n]+)", RegexOptions.IgnoreCase);
+                    if (!mo1.Success)
+                        mo1 = Regex.Match(html, @"Оригинальное\s*название\s*</b>\s*:\s*([^<\r\n]+)", RegexOptions.IgnoreCase);
                     if (mo1.Success)
-                        original = HttpUtility.HtmlDecode(mo1.Groups[1].Value).Trim();
+                        original = Clean(mo1.Groups[1].Value);
 
-                    // <font ...><b>Оригинальное название</b></font>: Xxx<br>
-                    if (string.IsNullOrWhiteSpace(original))
-                    {
-                        var mo2 = Regex.Match(html, @"Оригинальное\s*название\s*</b>\s*</font>\s*:\s*([^<\r\n]+)", RegexOptions.IgnoreCase);
-                        if (mo2.Success)
-                            original = HttpUtility.HtmlDecode(mo2.Groups[1].Value).Trim();
-                    }
-
-                    // fallback
-                    if (string.IsNullOrWhiteSpace(original))
-                    {
-                        var mo3 = Regex.Match(html, @"Оригинальное\s*название\s*[:\-]\s*([^<\r\n]+)", RegexOptions.IgnoreCase);
-                        if (mo3.Success)
-                            original = HttpUtility.HtmlDecode(mo3.Groups[1].Value).Trim();
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(magnet) || !string.IsNullOrWhiteSpace(original))
-                        return (magnet, original);
-                }
+                    if (!string.IsNullOrWhiteSpace(magnet) || !string.IsNullOrWhiteSpace(original) || !string.IsNullOrWhiteSpace(name))
+                        return (magnet, original, name);
+}
                 catch { }
 
                 await Task.Delay(500 * i);
             }
 
-            return (null, null);
+            return (null, null, null);
         }
         #endregion
 
