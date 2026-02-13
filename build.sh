@@ -10,7 +10,7 @@ cd "$SCRIPT_DIR"
 OUTPUT_BASE="${OUTPUT_BASE:-$SCRIPT_DIR/dist}"
 
 # Check for --all flag
-BUILD_ALL=false
+BUILD_ALL=true
 if [[ "${1:-}" == "--all" ]]; then
   BUILD_ALL=true
 fi
