@@ -31,6 +31,7 @@ namespace JacRed.Engine
         #endregion
 
         #region AddOrUpdate
+
         /// <summary>Извлекает числовой ID раздачи из URL трекера. При обновлении раздачи на трекере меняется slug, но ID остаётся — без этого создавались бы дубликаты.</summary>
         static int GetTorrentIdFromUrl(string trackerName, string url)
         {
@@ -189,6 +190,17 @@ namespace JacRed.Engine
                     t._sn = StringConvert.SearchName(t.name);
                     upt();
                 }
+                // Убеждаемся, что _sn всегда заполнен, даже если name не изменился
+                if (string.IsNullOrWhiteSpace(t._sn))
+                {
+                    if (!string.IsNullOrWhiteSpace(t.name))
+                        t._sn = StringConvert.SearchName(t.name);
+                    else if (!string.IsNullOrWhiteSpace(torrent.title))
+                        t._sn = StringConvert.SearchName(torrent.title);
+
+                    if (!string.IsNullOrWhiteSpace(t._sn))
+                        upt();
+                }
 
                 if (!string.IsNullOrWhiteSpace(torrent.originalname) && torrent.originalname != t.originalname)
                 {
@@ -196,11 +208,26 @@ namespace JacRed.Engine
                     t._so = StringConvert.SearchName(t.originalname);
                     upt();
                 }
-                else if (string.IsNullOrWhiteSpace(t.originalname) && !string.IsNullOrWhiteSpace(torrent.title))
+                else if (string.IsNullOrWhiteSpace(t.originalname))
                 {
-                    t.originalname = torrent.title;
+                    // For Russian content where originalname is null, use name instead of title
+                    // to avoid creating keys with full title (including season/episode info)
+                    t.originalname = !string.IsNullOrWhiteSpace(t.name) ? t.name : (torrent.title ?? "");
                     t._so = StringConvert.SearchName(t.originalname);
                     upt();
+                }
+                // Убеждаемся, что _so всегда заполнен, даже если originalname не изменился
+                if (string.IsNullOrWhiteSpace(t._so))
+                {
+                    if (!string.IsNullOrWhiteSpace(t.originalname))
+                        t._so = StringConvert.SearchName(t.originalname);
+                    else if (!string.IsNullOrWhiteSpace(t.name))
+                        t._so = StringConvert.SearchName(t.name);
+                    else if (!string.IsNullOrWhiteSpace(torrent.title))
+                        t._so = StringConvert.SearchName(torrent.title);
+
+                    if (!string.IsNullOrWhiteSpace(t._so))
+                        upt();
                 }
 
                 if (torrent.relased > 0 && torrent.relased != t.relased)
@@ -222,7 +249,10 @@ namespace JacRed.Engine
                     AppendFdbLog(torrent, t);
 
                 t.checkTime = DateTime.Now;
-                // Только для Lostfilm: при смене name/originalname переносим торрент в бакет с правильным ключом (поиск по русскому названию). Остальные трекеры не трогаем.
+
+                if (foundById)
+                    Database.TryAdd(t.url, t);
+
                 if (string.Equals(t.trackerName, "lostfilm", StringComparison.OrdinalIgnoreCase))
                 {
                     string newKey = keyDb(t.name, t.originalname);
@@ -237,8 +267,6 @@ namespace JacRed.Engine
                     }
                 }
                 AddOrUpdateMasterDb(t);
-                if (foundById)
-                    Database.TryAdd(t.url, t);
             }
             else
             {
@@ -246,7 +274,16 @@ namespace JacRed.Engine
                     return;
 
                 var name = torrent.name ?? torrent.title ?? "";
-                var originalname = torrent.originalname ?? torrent.title ?? "";
+                // For Russian content where originalname is null, use name instead of title
+                // to avoid creating keys with full title (including season/episode info)
+                var originalname = torrent.originalname ?? name ?? "";
+
+                // Убеждаемся, что name и originalname не пустые
+                if (string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(torrent.title))
+                    name = torrent.title;
+                if (string.IsNullOrWhiteSpace(originalname))
+                    originalname = name ?? torrent.title ?? "";
+
                 t = new TorrentDetails()
                 {
                     url = torrent.url,
@@ -264,8 +301,22 @@ namespace JacRed.Engine
                     magnet = torrent.magnet,
                     ffprobe = torrent.ffprobe
                 };
+
+                // Всегда заполняем _sn и _so, даже если name или originalname пустые
+                // Используем fallback на title если нужно
                 t._sn = StringConvert.SearchName(t.name);
+                if (string.IsNullOrWhiteSpace(t._sn) && !string.IsNullOrWhiteSpace(t.title))
+                    t._sn = StringConvert.SearchName(t.title);
+
                 t._so = StringConvert.SearchName(t.originalname);
+                if (string.IsNullOrWhiteSpace(t._so))
+                {
+                    // Если originalname пустое, используем name или title
+                    if (!string.IsNullOrWhiteSpace(t.name))
+                        t._so = StringConvert.SearchName(t.name);
+                    else if (!string.IsNullOrWhiteSpace(t.title))
+                        t._so = StringConvert.SearchName(t.title);
+                }
 
                 savechanges = true;
                 updateFullDetails(t);
