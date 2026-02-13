@@ -53,7 +53,7 @@ namespace JacRed.Models.tParse
         public long Id { get; set; }
 
         [JsonProperty("added")]
-        public long Added { get; set; }
+        public object Added { get; set; }
 
         [JsonProperty("size")]
         public long Size { get; set; }
