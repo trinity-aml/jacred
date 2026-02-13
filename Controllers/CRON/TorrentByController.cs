@@ -587,13 +587,14 @@ namespace JacRed.Controllers.CRON
             {
                 await FileDB.AddOrUpdate<TorrentBaseDetails>(
                     torrents,
-                    async (tor, db) =>
+                    (tor, db) =>
                     {
                         if (db != null && db.ContainsKey(tor.url))
                             updated++;
                         else
                             inserted++;
-                        return true;
+
+                        return Task.FromResult(true);
                     }
                 );
             }
