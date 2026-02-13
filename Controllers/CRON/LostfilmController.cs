@@ -18,6 +18,119 @@ namespace JacRed.Controllers.CRON
         static readonly object _parseLock = new object();
         static bool _parseRunning;
 
+        // Кэш информации о сериалах: slug -> (год создания сериала, русское имя)
+        // Нужен, чтобы:
+        // 1) relased не брался из даты эпизода (12.02.2026), а соответствовал году сериала из meta itemprop="dateCreated"
+        // 2) выравнивать name (русское) для карточек, где в /new/ нет hor-breaker с русским названием
+        static readonly Dictionary<string, (int year, string russianName)> _seriesInfoCache =
+            new Dictionary<string, (int, string)>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Нормализует createTime из дат LostFilm (обычно без времени) так, чтобы:
+        /// - не было сдвигов «вчера/сегодня» из‑за различий Kind (UTC vs Local)
+        /// - сравнения с DateTime.Today работали предсказуемо
+        /// </summary>
+        static DateTime NormalizeCreateTime(DateTime dt)
+        {
+            if (dt == default) return dt;
+
+            // Если Kind не задан — считаем, что это локальное время сервера (как во многих других контроллерах).
+            if (dt.Kind == DateTimeKind.Unspecified)
+                dt = DateTime.SpecifyKind(dt, DateTimeKind.Local);
+
+            // Если время не указано (00:00:00) — ставим полдень, чтобы избежать сдвига даты при преобразованиях.
+            if (dt.TimeOfDay == TimeSpan.Zero)
+                dt = new DateTime(dt.Year, dt.Month, dt.Day, 12, 0, 0, DateTimeKind.Local);
+
+            return dt;
+        }
+
+        static string ReplaceYearInTitle(string title, int year)
+        {
+            if (string.IsNullOrWhiteSpace(title) || year <= 0)
+                return title;
+
+            // Серийные заголовки формируются как "... [YYYY]" или "... [YYYY, 1080p]"
+            return Regex.Replace(title, @"\[(\d{4})([^\]]*)\]\s*$",
+                m => $"[{year}{m.Groups[2].Value}]", RegexOptions.None);
+        }
+
+        static async Task EnrichSeriesRelasedAndNames(string host, string cookie, List<TorrentDetails> list)
+        {
+            if (list == null || list.Count == 0)
+                return;
+
+            var slugs = list
+                .Where(t => t?.types != null && t.types.Contains("serial") && !string.IsNullOrEmpty(t.url))
+                .Select(t => Regex.Match(t.url, @"/series/([^/]+)/", RegexOptions.IgnoreCase).Groups[1].Value)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (slugs.Count == 0)
+                return;
+
+            foreach (string slug in slugs)
+            {
+                if (_seriesInfoCache.ContainsKey(slug))
+                    continue;
+
+                try
+                {
+                    // На /seasons/ точно присутствует itemprop="dateCreated"
+                    string seasonsUrl = $"{host.TrimEnd('/')}/series/{slug}/seasons/";
+                    string html = await HttpClient.Get(seasonsUrl, cookie: cookie,
+                        useproxy: AppInit.conf.Lostfilm.useproxy, httpversion: 2);
+
+                    if (!string.IsNullOrEmpty(html) && html.Contains("LostFilm.TV"))
+                    {
+                        var (year, russianName) = ParseRelasedAndNameFromHtml(html);
+                        _seriesInfoCache[slug] = (year, russianName);
+                    }
+                    else
+                    {
+                        _seriesInfoCache[slug] = (0, null);
+                    }
+                }
+                catch
+                {
+                    _seriesInfoCache[slug] = (0, null);
+                }
+            }
+
+            foreach (var t in list)
+            {
+                if (t?.types == null || !t.types.Contains("serial") || string.IsNullOrEmpty(t.url))
+                    continue;
+
+                string slug = Regex.Match(t.url, @"/series/([^/]+)/", RegexOptions.IgnoreCase).Groups[1].Value;
+                if (string.IsNullOrEmpty(slug))
+                    continue;
+
+                if (!_seriesInfoCache.TryGetValue(slug, out var info))
+                    continue;
+
+                if (info.year > 0)
+                {
+                    t.relased = info.year;
+                    t.title = ReplaceYearInTitle(t.title, info.year);
+                }
+
+                if (!string.IsNullOrWhiteSpace(info.russianName))
+                {
+                    // Если сейчас name совпадает с originalname (или пустой) — подставляем русское.
+                    if (string.IsNullOrWhiteSpace(t.name) ||
+                        (!string.IsNullOrWhiteSpace(t.originalname) &&
+                         string.Equals(t.name, t.originalname, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        t.name = info.russianName;
+                    }
+                }
+            }
+        }
+
+
+
         /// <summary>Парсит только первую страницу /new/ — актуальные новинки.</summary>
         [HttpGet]
         public async Task<string> Parse()
@@ -188,7 +301,7 @@ namespace JacRed.Controllers.CRON
                         ParserLog.Write("lostfilm", $"  no magnets: {series} s{seasonNum}");
                         continue;
                     }
-                    DateTime createTime = DateTime.UtcNow;
+                    DateTime createTime = DateTime.Now;
                     foreach (var (magnet, quality, sizeName) in magnets)
                     {
                         string title = $"{name} / {originalname} / {seasonNum} сезон (полный сезон) [{relased}, {quality}]";
@@ -285,7 +398,11 @@ namespace JacRed.Controllers.CRON
             if (list.Count > beforeMovies)
                 source = source + "+movies:" + (list.Count - beforeMovies);
 
-            DateTime? oldestOnPage = list.Count > 0 ? list.Min(t => t.createTime) : (DateTime?)null;
+            
+
+            // Подтягиваем год сериала (relased) и русское имя по slug (кэшируется)
+            await EnrichSeriesRelasedAndNames(host, cookie, list);
+DateTime? oldestOnPage = list.Count > 0 ? list.Min(t => t.createTime) : (DateTime?)null;
 
             if (startFromDate.HasValue && list.Count > 0)
             {
@@ -425,7 +542,9 @@ namespace JacRed.Controllers.CRON
                 string dateStr = dateMatches[dateMatches.Count - 1].Groups[1].Value;
                 DateTime createTime = tParse.ParseCreateTime(dateStr, "dd.MM.yyyy");
                 if (createTime == default)
-                    createTime = DateTime.UtcNow;
+                    createTime = DateTime.Now;
+
+                createTime = NormalizeCreateTime(createTime);
                 int relased = createTime != default ? createTime.Year : 0;
                 if (relased <= 0)
                     continue;
@@ -477,7 +596,9 @@ namespace JacRed.Controllers.CRON
                 if (createTime == default && page != 1)
                     continue;
                 if (createTime == default)
-                    createTime = DateTime.UtcNow;
+                    createTime = DateTime.Now;
+
+                createTime = NormalizeCreateTime(createTime);
                 int relased = createTime != default ? createTime.Year : 0;
                 if (relased <= 0)
                     continue;
@@ -521,7 +642,9 @@ namespace JacRed.Controllers.CRON
                 if (createTime == default && page != 1)
                     continue;
                 if (createTime == default)
-                    createTime = DateTime.UtcNow;
+                    createTime = DateTime.Now;
+
+                createTime = NormalizeCreateTime(createTime);
                 int relased = createTime != default ? createTime.Year : 0;
                 if (relased <= 0)
                     continue;
@@ -574,7 +697,9 @@ namespace JacRed.Controllers.CRON
 
                 DateTime createTime = tParse.ParseCreateTime(dateStr, "dd.MM.yyyy");
                 if (createTime == default)
-                    createTime = DateTime.UtcNow;
+                    createTime = DateTime.Now;
+
+                createTime = NormalizeCreateTime(createTime);
                 int relased = createTime != default ? createTime.Year : 0;
                 if (relased <= 0)
                     relased = createTime.Year;
@@ -945,7 +1070,9 @@ namespace JacRed.Controllers.CRON
                 string dateStr = dateMatches[dateMatches.Count - 1].Groups[1].Value;
                 DateTime createTime = tParse.ParseCreateTime(dateStr, "dd.MM.yyyy");
                 if (createTime == default)
-                    createTime = DateTime.UtcNow;
+                    createTime = DateTime.Now;
+
+                createTime = NormalizeCreateTime(createTime);
                 int relased = createTime != default ? createTime.Year : 0;
                 if (relased <= 0)
                     continue;
@@ -971,7 +1098,9 @@ namespace JacRed.Controllers.CRON
                 string dateStr = newMovieDateMatches.Count > 0 ? newMovieDateMatches[newMovieDateMatches.Count - 1].Groups[1].Value : "";
                 DateTime createTime = tParse.ParseCreateTime(dateStr, "dd.MM.yyyy");
                 if (createTime == default)
-                    createTime = DateTime.UtcNow;
+                    createTime = DateTime.Now;
+
+                createTime = NormalizeCreateTime(createTime);
                 int relased = createTime != default ? createTime.Year : 0;
                 if (relased <= 0)
                     continue;
@@ -998,7 +1127,9 @@ namespace JacRed.Controllers.CRON
                     continue;
                 DateTime createTime = tParse.ParseCreateTime(dateStr, "dd.MM.yyyy");
                 if (createTime == default)
-                    createTime = DateTime.UtcNow;
+                    createTime = DateTime.Now;
+
+                createTime = NormalizeCreateTime(createTime);
                 int relased = createTime != default ? createTime.Year : 0;
                 if (relased <= 0)
                     continue;
