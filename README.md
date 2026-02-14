@@ -32,7 +32,8 @@ curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | bas
 Скрипт устанавливает приложение в **`/opt/jacred`**, создаёт пользователя и systemd-сервис `jacred`, добавляет cron для сохранения БД и при первом запуске по желанию скачивает готовую базу.
 
 **Опции:**
-
+red-FDB — Torrent aggregator & file database" width="480">
+</div>
 | Опция | Описание |
 |-------|----------|
 | `--no-download-db` | Не скачивать и не распаковывать базу (только при установке) |

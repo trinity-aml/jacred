@@ -32,7 +32,7 @@
 */20 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/toloka/ParseAllTask"
 
 */20 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/bitruapi/parse"
-# Разово подтянуть торренты: curl -s "http://127.0.0.1:911/cron/bitruapi/parse?fullparse"
+# Разово подтянуть торренты: curl -s "http://127.0.0.1:9117/cron/bitruapi/parse?fullparse"
 # curl -s "http://127.0.0.1:9117/cron/bitruapi/parse?fullparse&batches=20"
 
 */40 *   *   *   *    curl -s "http://127.0.0.1:9117/cron/mazepa/parse"
