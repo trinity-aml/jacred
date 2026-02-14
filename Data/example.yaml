@@ -165,8 +165,9 @@ Animelayer:
     p: ""
 
 Anifilm:
-  host: https://anifilm.net
+  host: https://anifilm.pro
   alias: ""
+  cookie: "cloud flare cookie"
   useproxy: false
   reqMinute: 8
   parseDelay: 7000
