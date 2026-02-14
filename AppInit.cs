@@ -175,6 +175,7 @@ namespace JacRed
                 case "anidub": return conf.Anidub.log;
                 case "leproduction": return conf.Leproduction.log;
                 case "anistar": return conf.Anistar.log;
+                case "anifilm": return conf.Anifilm.log;
                 default: return false;
             }
         }
@@ -256,7 +257,7 @@ namespace JacRed
 
         public string[] synctrackers = null;
 
-        public string[] disable_trackers = new string[] { "hdrezka", "anifilm", "anilibria" };
+        public string[] disable_trackers = new string[] { "hdrezka" };
 
         public bool syncsport = true;
 
@@ -298,7 +299,7 @@ namespace JacRed
 
         public TrackerSettings Animelayer = new TrackerSettings("https://animelayer.ru");
 
-        public TrackerSettings Anifilm = new TrackerSettings("https://anifilm.net");
+        public TrackerSettings Anifilm = new TrackerSettings("https://anifilm.pro");
         
         public TrackerSettings Anidub = new TrackerSettings("https://tr.anidub.com");
         

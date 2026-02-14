@@ -14,6 +14,80 @@ namespace JacRed.Controllers.CRON
     [Route("/cron/anifilm/[action]")]
     public class AnifilmController : BaseController
     {
+        #region Cookie (берём из AppInit.conf.Anifilm.cookie)
+        static string GetAnifilmCookie()
+        {
+            try
+            {
+                var c = AppInit.conf?.Anifilm?.cookie;
+                if (string.IsNullOrWhiteSpace(c))
+                    return null;
+
+                // допускаем что в конфиге может лежать "cookie: ..." или просто "a=b; c=d"
+                c = c.Trim();
+                if (c.StartsWith("cookie:", StringComparison.OrdinalIgnoreCase))
+                    c = c.Substring("cookie:".Length).Trim();
+
+                return c.Trim().TrimEnd(';');
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        #endregion
+
+        #region Cloudflare
+        static bool IsCloudflarePage(string html)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+                return false;
+
+            string h = html.ToLowerInvariant();
+
+            if (h.Contains("cdn-cgi/challenge-platform")) return true;
+            if (h.Contains("cf-chl")) return true;
+            if (h.Contains("just a moment")) return true;
+            if (h.Contains("checking your browser")) return true;
+            if (h.Contains("attention required")) return true;
+            if (h.Contains("cf-error")) return true;
+
+            // слабый признак
+            if (h.Contains("cloudflare") && h.Contains("ray id")) return true;
+
+            return false;
+        }
+
+        async Task<string> GetAnifilmHtmlWithRetry(string url, string referer = null, int attempts = 3)
+        {
+            string cookie = GetAnifilmCookie();
+
+            for (int i = 1; i <= attempts; i++)
+            {
+                string html = await HttpClient.Get(
+                    url,
+                    cookie: cookie,
+                    referer: referer,
+                    useproxy: AppInit.conf.Anifilm.useproxy
+                );
+
+                if (string.IsNullOrWhiteSpace(html))
+                    continue;
+
+                if (IsCloudflarePage(html))
+                {
+                    // HttpClient не проходит JS challenge — делаем backoff и повторяем
+                    await Task.Delay(i == 1 ? 15000 : 30000);
+                    continue;
+                }
+
+                return html;
+            }
+
+            return null;
+        }
+        #endregion
+
         #region Parse
         static bool workParse = false;
 
@@ -79,7 +153,7 @@ namespace JacRed.Controllers.CRON
         #region parsePage
         async Task<bool> parsePage(string cat, int page, DateTime createTime)
         {
-            string html = await HttpClient.Get($"{AppInit.conf.Anifilm.rqHost()}/releases/page/{page}?category={cat}", useproxy: AppInit.conf.Anifilm.useproxy);
+            string html = await GetAnifilmHtmlWithRetry($"{AppInit.conf.Anifilm.rqHost()}/releases/page/{page}?category={cat}", referer: AppInit.conf.Anifilm.host);
             if (html == null || !html.Contains("id=\"ui-components\""))
                 return false;
 
@@ -91,7 +165,7 @@ namespace JacRed.Controllers.CRON
                 string Match(string pattern, int index = 1)
                 {
                     string res = HttpUtility.HtmlDecode(new Regex(pattern, RegexOptions.IgnoreCase).Match(row).Groups[index].Value.Trim());
-                    res = Regex.Replace(res, "[\n\r\t ]+", " ");
+                    res = Regex.Replace(res, "[\n\r\t ]+", " ");
                     return res.Trim();
                 }
                 #endregion
@@ -143,7 +217,7 @@ namespace JacRed.Controllers.CRON
                 if (db.TryGetValue(t.url, out TorrentDetails _tcache) && _tcache.title.Replace(" [1080p]", "") == t.title)
                     return true;
 
-                var fullNews = await HttpClient.Get(t.url, useproxy: AppInit.conf.Anifilm.useproxy);
+                var fullNews = await GetAnifilmHtmlWithRetry(t.url, referer: AppInit.conf.Anifilm.host);
                 if (fullNews != null)
                 {
                     string tid = null;
@@ -163,7 +237,12 @@ namespace JacRed.Controllers.CRON
 
                     if (!string.IsNullOrWhiteSpace(tid))
                     {
-                        byte[] torrent = await HttpClient.Download($"{AppInit.conf.Anifilm.host}/{tid}", referer: t.url, useproxy: AppInit.conf.Anifilm.useproxy);
+                        byte[] torrent = await HttpClient.Download(
+                            $"{AppInit.conf.Anifilm.host}/{tid}",
+                            cookie: GetAnifilmCookie(),
+                            referer: t.url,
+                            useproxy: AppInit.conf.Anifilm.useproxy
+                        );
                         string magnet = BencodeTo.Magnet(torrent);
 
                         if (!string.IsNullOrWhiteSpace(magnet))
