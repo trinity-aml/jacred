@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using JacRed.Engine.CORE;
+using JacRed.Models.AppConf;
 using JacRed.Models.tParse;
 using IO = System.IO;
 using JacRed.Engine;
@@ -26,11 +28,16 @@ namespace JacRed.Controllers.CRON
     {
         const string ApiGetTorrents = "torrents";
 
+        const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36";
+
         /// <summary>
         /// Безопасная задержка между "операциями" к bitru (API POST и Download).
         /// (делаем заметно меньше 5 req/sec, т.к. Download может делать 1+ редиректов)
         /// </summary>
         const int ApiDelayMs = 650;
+
+        const int ApiMaxRetries = 3;
+        static readonly int[] ApiRetryDelaysMs = new[] { 3000, 10000, 25000 };
 
         const int DumpMaxBatches = 2;
         const int HardMaxBatches = 5000;
@@ -225,39 +232,32 @@ namespace JacRed.Controllers.CRON
 
         #region API request helpers + dump
 
-        async Task<BitruApiResponse> ApiRequestAsync(object jsonParams, bool dump = false, string dumpTag = null)
+        
+async Task<BitruApiResponse> ApiRequestAsync(object jsonParams, bool dump = false, string dumpTag = null)
+{
+    string json = JsonConvert.SerializeObject(jsonParams);
+    string postData = $"get={ApiGetTorrents}&json={Uri.EscapeDataString(json)}";
+
+    if (dump)
+    {
+        try
         {
-            string json = JsonConvert.SerializeObject(jsonParams);
-            string postData = $"get={ApiGetTorrents}&json={Uri.EscapeDataString(json)}";
+            IO.Directory.CreateDirectory("Data/temp");
+            IO.File.WriteAllText($"Data/temp/bitruapi_last_request{(string.IsNullOrEmpty(dumpTag) ? "" : "_" + dumpTag)}.json", json);
+        }
+        catch { }
+    }
 
-            if (dump)
-            {
-                try
-                {
-                    IO.Directory.CreateDirectory("Data/temp");
-                    IO.File.WriteAllText($"Data/temp/bitruapi_last_request{(string.IsNullOrEmpty(dumpTag) ? "" : "_" + dumpTag)}.json", json);
-                }
-                catch { }
-            }
+    for (int attempt = 0; attempt < ApiMaxRetries; attempt++)
+    {
+        await ThrottleBitruAsync();
+        Interlocked.Increment(ref _apiCalls);
 
-            await ThrottleBitruAsync();
-            Interlocked.Increment(ref _apiCalls);
+        string response = await HttpClient.Post(ApiUrl, postData, timeoutSeconds: 25, useproxy: AppInit.conf.Bitru.useproxy);
 
-            string response = await HttpClient.Post(ApiUrl, postData, timeoutSeconds: 20, useproxy: AppInit.conf.Bitru.useproxy);
-            if (string.IsNullOrWhiteSpace(response))
-            {
-                if (dump)
-                {
-                    try
-                    {
-                        IO.Directory.CreateDirectory("Data/temp");
-                        IO.File.WriteAllText($"Data/temp/bitruapi_last_api{(string.IsNullOrEmpty(dumpTag) ? "" : "_" + dumpTag)}.json", "");
-                    }
-                    catch { }
-                }
-                return null;
-            }
-
+        // success path
+        if (!string.IsNullOrWhiteSpace(response))
+        {
             if (dump)
             {
                 try
@@ -270,6 +270,31 @@ namespace JacRed.Controllers.CRON
 
             return JsonConvert.DeserializeObject<BitruApiResponse>(response);
         }
+
+        // null/empty -> HTTP != 200 or exception inside Engine.HttpClient
+        if (attempt + 1 < ApiMaxRetries)
+        {
+            int delay = ApiRetryDelaysMs[Math.Min(attempt, ApiRetryDelaysMs.Length - 1)];
+            await Task.Delay(delay);
+            continue;
+        }
+
+        // final failure
+        if (dump)
+        {
+            try
+            {
+                IO.Directory.CreateDirectory("Data/temp");
+                IO.File.WriteAllText($"Data/temp/bitruapi_last_api{(string.IsNullOrEmpty(dumpTag) ? "" : "_" + dumpTag)}.json", "");
+            }
+            catch { }
+        }
+
+        return null;
+    }
+
+    return null;
+}
 
         static long ParseUnix(object v)
         {
@@ -554,6 +579,96 @@ namespace JacRed.Controllers.CRON
 
         #region Save to FileDB + magnets (saved = magnet_ok)
 
+        
+
+static WebProxy WebProxyFromSettings(ProxySettings p)
+{
+    ICredentials credentials = null;
+    if (p.useAuth)
+        credentials = new NetworkCredential(p.username, p.password);
+
+    var proxyIp = p.list.OrderBy(a => Guid.NewGuid()).First();
+    return new WebProxy(proxyIp, p.BypassOnLocal, null, credentials);
+}
+
+async Task<byte[]> DownloadWithRedirects(string url, string referer, int timeoutSeconds = 25, int maxRedirects = 5)
+{
+    try
+    {
+        string current = url;
+
+        for (int i = 0; i <= maxRedirects; i++)
+        {
+            await ThrottleBitruAsync();
+
+            var handler = new System.Net.Http.HttpClientHandler()
+            {
+                AllowAutoRedirect = false,
+                AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate
+            };
+
+            handler.ServerCertificateCustomValidationCallback += (sender, cert, chain, sslPolicyErrors) => true;
+
+            // proxy (same rules as Engine.HttpClient)
+            if (AppInit.conf.proxy.list != null && AppInit.conf.proxy.list.Count > 0 && AppInit.conf.Bitru.useproxy)
+            {
+                handler.UseProxy = true;
+                handler.Proxy = HttpClient.webProxy();
+            }
+
+            if (AppInit.conf.globalproxy != null && AppInit.conf.globalproxy.Count > 0)
+            {
+                foreach (var p in AppInit.conf.globalproxy)
+                {
+                    if (p.list == null || p.list.Count == 0)
+                        continue;
+
+                    if (System.Text.RegularExpressions.Regex.IsMatch(current, p.pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                    {
+                        handler.UseProxy = true;
+                        handler.Proxy = WebProxyFromSettings(p);
+                        break;
+                    }
+                }
+            }
+
+            using (var client = new System.Net.Http.HttpClient(handler))
+            {
+                client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+                client.MaxResponseContentBufferSize = 10_000_000;
+                client.DefaultRequestHeaders.Add("user-agent", UserAgent);
+                if (!string.IsNullOrWhiteSpace(referer))
+                    client.DefaultRequestHeaders.Add("referer", referer);
+
+                using (var resp = await client.GetAsync(current))
+                {
+                    if (resp.StatusCode == HttpStatusCode.OK)
+                    {
+                        var bytes = await resp.Content.ReadAsByteArrayAsync();
+                        return bytes != null && bytes.Length > 0 ? bytes : null;
+                    }
+
+                    // redirects
+                    if ((int)resp.StatusCode >= 300 && (int)resp.StatusCode < 400 && resp.Headers.Location != null)
+                    {
+                        var loc = resp.Headers.Location;
+                        current = loc.IsAbsoluteUri ? loc.ToString() : new Uri(new Uri(current), loc).ToString();
+                        continue;
+                    }
+
+                    return null;
+                }
+            }
+        }
+
+        return null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
         async Task<int> SaveTorrentsAndMagnets(List<TorrentDetails> torrents)
         {
             int magnetOk = 0;
@@ -591,10 +706,7 @@ namespace JacRed.Controllers.CRON
                 }
                 if (string.IsNullOrWhiteSpace(downloadUrl))
                     return false;
-
-                await ThrottleBitruAsync();
-
-                byte[] data = await HttpClient.Download(downloadUrl, referer: HostUrl + "/", timeoutSeconds: 20, useproxy: AppInit.conf.Bitru.useproxy);
+                byte[] data = await DownloadWithRedirects(downloadUrl, referer: HostUrl + "/", timeoutSeconds: 25);
                 string magnet = data != null ? BencodeTo.Magnet(data) : null;
                 if (!string.IsNullOrWhiteSpace(magnet))
                 {
