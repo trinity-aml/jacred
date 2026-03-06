@@ -293,9 +293,18 @@
           </div>
         </div>
 
-        <button id="toggleTheme"
-          class="p-3 rounded-xl bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 transition-all group"
-          aria-label="Переключить тему оформления" type="button">
+        <div class="flex items-center gap-2">
+          <button type="button" id="apiKeyBtnHeader"
+            class="inline-flex md:hidden p-3 rounded-xl bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 transition-all shrink-0"
+            aria-label="Установить API ключ" title="Установить API ключ">
+            <svg class="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+            </svg>
+          </button>
+          <button id="toggleTheme"
+            class="p-3 rounded-xl bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 transition-all group shrink-0"
+            aria-label="Переключить тему оформления" type="button">
           <svg id="iconMoon"
             class="w-5 h-5 text-gray-600 dark:text-gray-400 group-hover:text-gray-800 dark:group-hover:text-gray-200 hidden"
             fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -307,7 +316,8 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
           </svg>
-        </button>
+          </button>
+        </div>
         <script>
             (function () {
               var isDark = document.documentElement.classList.contains('dark');
@@ -385,7 +395,7 @@
             <span>Главная</span>
           </a>
           <button type="button" id="apiKeyBtn"
-            class="tap-target inline-flex items-center justify-center gap-1.5 sm:gap-2 h-9 min-w-[44px] px-2.5 sm:px-3 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium transition-colors border border-transparent shrink-0"
+            class="tap-target hidden md:inline-flex items-center justify-center gap-1.5 sm:gap-2 h-9 min-w-[44px] px-2.5 sm:px-3 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium transition-colors border border-transparent shrink-0"
             aria-label="Установить API ключ" title="Установить API ключ">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -1252,9 +1262,10 @@
 
         setupModalFocusTrap(apiKeyModal);
 
-        const openApiKeyModal = () => {
+        const openApiKeyModal = (e) => {
           if (!apiKeyModal || !apiKeyInput) return;
-          apiKeyModalTrigger = document.getElementById('apiKeyBtn');
+          const isDesktop = window.matchMedia('(min-width: 768px)').matches;
+          apiKeyModalTrigger = (e && e.currentTarget) || (isDesktop ? document.getElementById('apiKeyBtn') : document.getElementById('apiKeyBtnHeader'));
           apiKeyInput.value = LS.get('api_key');
           if (apiKeyModalError) { apiKeyModalError.classList.add('hidden'); apiKeyModalError.textContent = ''; }
           apiKeyModal.classList.remove('hidden');
@@ -1298,6 +1309,7 @@
         };
 
         document.getElementById('apiKeyBtn')?.addEventListener('click', openApiKeyModal);
+        document.getElementById('apiKeyBtnHeader')?.addEventListener('click', openApiKeyModal);
         apiKeyModalCancel?.addEventListener('click', closeApiKeyModal);
         apiKeyModalBackdrop?.addEventListener('click', closeApiKeyModal);
         apiKeyModalSave?.addEventListener('click', saveApiKeyFromModal);
