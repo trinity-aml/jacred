@@ -45,6 +45,9 @@
 
 - **.NET 9.0** (для запуска из исходников)
 - Для установки скриптом: **Linux** (systemd, cron), рекомендуется Debian/Ubuntu
+- **libicu** — на Linux (.NET использует ICU для глобализации). При запуске бинарника напрямую (без Docker) установите пакет:
+  - **Debian/Ubuntu:** `apt install libicu-dev` или `libicu76` / `libicu72` (имя пакета зависит от версии дистрибутива)
+  - **Alpine:** `apk add icu-libs` (в Docker-образе уже включено)
 
 ---
 
@@ -72,10 +75,10 @@ curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | bas
 
 ```bash
 # Обычная установка (одна команда)
-curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | bash
+curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | sudo bash
 
 # Установка без загрузки базы (одна команда)
-curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | bash -s -- --no-download-db
+curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh | sudo bash -s -- --no-download-db
 
 # Скачать скрипт и запустить с аргументами
 curl -s https://raw.githubusercontent.com/jacred-fdb/jacred/main/jacred.sh -o jacred.sh
@@ -492,6 +495,7 @@ volumes:
 
 ### Приложение не запускается
 
+- **Ошибка «Couldn't find a valid ICU package»** — .NET требует библиотеку ICU на Linux. Установите: `apt install libicu-dev` (Debian/Ubuntu) или `libicu76` / `libicu72` (имя зависит от версии). Проверьте доступные пакеты: `apt-cache search libicu`. Подробнее: [aka.ms/dotnet-missing-libicu](https://aka.ms/dotnet-missing-libicu)
 - Проверьте наличие конфигурационного файла (`init.yaml` или `init.conf`)
 - Убедитесь, что порт не занят другим процессом: `netstat -tuln | grep 9117`
 - Проверьте логи systemd: `journalctl -u jacred -f`
