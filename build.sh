@@ -73,9 +73,13 @@ echo "==> Restoring packages..."
 dotnet restore --verbosity minimal
 
 ALL_PLATFORMS=(
+  linux-arm
   linux-arm64
+  linux-musl-x64
   linux-amd64
-  windows-x64
+  win-x64
+  win-x86
+  win-arm64
   osx-arm64
   osx-amd64
 )
