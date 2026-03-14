@@ -279,9 +279,9 @@ namespace JacRed
 
         public int timeSyncSpidr = 60; // минут (30, 60, 120 — без случайного смещения)
 
-        public TrackerSettings Rutor = new TrackerSettings("http://rutor.info");
+        public TrackerSettings Rutor = new TrackerSettings("https://rutor.is");
 
-        public TrackerSettings Megapeer = new TrackerSettings("http://megapeer.vip");
+        public TrackerSettings Megapeer = new TrackerSettings("https://megapeer.vip");
 
         public TrackerSettings TorrentBy = new TrackerSettings("https://torrent.by");
 
