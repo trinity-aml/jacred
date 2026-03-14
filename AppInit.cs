@@ -176,6 +176,9 @@ namespace JacRed
                 case "selezen": return conf.Selezen.log;
                 case "toloka": return conf.Toloka.log;
                 case "torrentby": return conf.TorrentBy.log;
+                case "leproduction": return conf.Leproduction.log;
+                case "anistar": return conf.Anistar.log;
+                case "anifilm": return conf.Anifilm.log;
                 default: return false;
             }
         }
@@ -305,6 +308,12 @@ namespace JacRed
         public TrackerSettings Aniliberty = new TrackerSettings("https://aniliberty.top");
 
         public TrackerSettings Knaben = new TrackerSettings("https://api.knaben.org");
+        
+        public TrackerSettings Anifilm = new TrackerSettings("https://anifilm.pro");
+        
+        public TrackerSettings Leproduction = new TrackerSettings("https://www.le-production.tv");
+        
+        public TrackerSettings Anistar = new TrackerSettings("https://anistar.org");
 
         // TODO: fix parser
         public TrackerSettings Baibako = new TrackerSettings("http://baibako.tv");
