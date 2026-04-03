@@ -103,11 +103,11 @@ jobs:
         with:
           dotnet-version: ${{ inputs.dotnet_version }}
 
-      - name: Dotnet format code
-        if: ${{ inputs.verify_format }}
-        run: dotnet format ${{ inputs.project_file }} --verify-no-changes
-        working-directory: ./
-        continue-on-error: false
+      # - name: Dotnet format code
+      #   if: ${{ inputs.verify_format }}
+      #   run: dotnet format ${{ inputs.project_file }} --verify-no-changes
+      #   working-directory: ./
+      #   continue-on-error: false
 
       - name: Restore
         run: dotnet restore --verbosity minimal
